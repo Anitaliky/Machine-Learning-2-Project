@@ -1,4 +1,6 @@
 from collections import OrderedDict
+from itertools import combinations
+from numpy.linalg import norm
 import numpy as np
 import pickle
 import os
@@ -50,22 +52,20 @@ class Mmem:
         df = pd.read_csv('train.csv')
         grouped = df.groupby('Airport_Code')
         for group, df_group in grouped:
-            df_group.loc[-2] = ['*']*len(df_group.columns)  # adding a row
-            df_group.loc[-1] = ['*']*len(df_group.columns)  # adding a row
-            df_group.index = df_group.index + 2  # shifting index
+            for i in range(1, 11):
+                df_group.loc[-i] = ['*'] * len(df_group.columns)  # adding a row
+            df_group.index = df_group.index + 10  # shifting index
             df_group.sort_index(inplace=True)
             for i in range(len(df_group)):  # iterate over indices of words in sentence
-                cur_row = df_group.iloc[i].drop('Severity', axis=1)
-                prev_row = df_group.iloc[i - 1].drop('Severity', axis=1)
-                pre_prev_row = df_group.iloc[i - 2].drop('Severity', axis=1)
+                history_df = df_group.iloc[i - 10:i + 1].reset_index(drop=True)
+                curr_severity = df_group.loc[i, 'Severity']
+                self.histories.append((history_df, curr_severity))  # add to histories this history and tag
 
-                cur_tag = df_group.iloc[i]['Severity']
-                prev_tag = df_group.iloc[i - 1]['Severity']
-                pre_prev_tag = df_group.iloc[i - 2]['Severity']
-
-                history = (df_group, pre_prev_tag, prev_tag, i)
-                self.histories.append((history, cur_tag))  # add to histories this history and tag
-                self.tag_set.add(cur_tag)
+                for size in range(11):
+                    for indx in combinations(range(10), size):
+                        self.add2dict((history_df.loc[indx, 'Severity'], indx, curr_severity), 'f100')
+                        self.add2dict((indx, curr_severity), 'f101')  # value will be distance of temperatures.
+                        self.add2dict((indx, curr_severity), 'f102')  # value will be distance of temperatures.
 
                 # self.add2dict((cur_word.lower(), cur_tag), 'f100')
                 # for suffix_len in range(1, 5):  # [1, 2, 3, 4]
@@ -96,16 +96,21 @@ class Mmem:
             self.n_total_features = self.n_dict[feature_name]
 
     # history = (sentence_{1:n}(list), T_2, T_1, i)
-    def history2features(self, history, cur_tag):
+    def history2features(self, history_df, curr_severity):
         """return a list of features ID given a history"""
-        df_group, pre_prev_tag, prev_tag, i = history
-
-        cur_row = df_group.iloc[i].drop('Severity', axis=1)
-        prev_row = df_group.iloc[i - 1].drop('Severity', axis=1)
-        pre_prev_row = df_group.iloc[i - 2].drop('Severity', axis=1)
-
-        features = []
+        features = {}
         # adds the id of a feature if its conditions happens on the given history and tag
+        for size in range(11):
+            for indx in combinations(range(1, 11), size):
+                features[self.features_id_dict['f100']
+                    [(history_df.loc[indx, 'Severity'].reset_index(drop=True), indx, curr_severity)]] = \
+                    1
+                features[self.features_id_dict['f101'][(indx, curr_severity)]] = \
+                    norm(history_df.loc[indx, 'Temperature(F)'] - history_df.loc.tail(1)['Temperature(F)'], 1)  # TODO: try 1 -
+                features[self.features_id_dict['f102']
+                    [(history_df.loc[indx, 'Traffic_Signal'].reset_index(drop=True), indx, curr_severity)]] = \
+                    1
+
         features += [self.features_id_dict['f100'][(cur_word.lower(), cur_tag)]] \
             if (cur_word.lower(), cur_tag) in self.features_id_dict['f100'] else []
         for suffix_len in range(1, 5):  # [1, 2, 3, 4]
@@ -245,7 +250,7 @@ class Mmem:
         with open(test_path) as file:
             lines = list(file)
         for i, line in enumerate(lines):
-            print(i+1, end=', ')
+            print(i + 1, end=', ')
             sentence = line.split()
             if not self.comp:
                 sentence, t_tags = self.separate(sentence)
