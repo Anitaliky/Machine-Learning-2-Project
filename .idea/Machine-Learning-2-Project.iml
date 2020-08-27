@@ -4,6 +4,5 @@
     <content url="file://$MODULE_DIR$" />
     <orderEntry type="jdk" jdkName="Remote Python 3 (sftp://student@mladvgpu2019s-0003.eastus.cloudapp.azure.com:22/usr/bin/python)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="module" module-name="HW3" />
   </component>
 </module>
