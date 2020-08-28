@@ -1,3 +1,4 @@
+import itertools
 import time
 from collections import OrderedDict
 from itertools import combinations
@@ -14,7 +15,7 @@ class Mmem:
     def __init__(self, la, threshold, comp=False, k=None):
         self.likl_func = []
         self.likl_grad = []
-        self.tag_set = {0, 1}
+        self.tag_set = [0, 1]
         self.histories = []
         self.n_total_features = 0  # Total number of features accumulated
         self.features_list = ['f100', 'f101', 'f102', 'f103', 'f104', 'f105', 'f106', 'f107', 'f108', 'f109', 'f110']
@@ -23,9 +24,8 @@ class Mmem:
         self.la = la
         self.B = 7
         self.hyper_str = str(self.threshold) + '_' + str(self.la)
-        self.comp = comp
         self.model_dir = 'saves/'.format()
-        if not os.path.exists(self.model_dir) and not self.comp:
+        if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
         self.n_dict = {}
         self.features_id_dict = {f_name: {} for f_name in self.features_list}  # OrderedDict
@@ -46,25 +46,25 @@ class Mmem:
 
     def create_features(self):
         """defines and create the features, counting number of occurence of each one."""
-        df = pd.read_csv('/home/student/Desktop/ML/dfs.csv')
+        df = pd.read_csv('/home/student/Desktop/ML/dfs.csv').head(10000)
         grouped = df.groupby('Airport_Code')
         for group_id, (group, df_group) in enumerate(grouped):
-            print(group_id, len(df_group))
+            print(group_id, len(df_group), end=', ')
             for i in range(10):
                 df_group.loc[-i] = ['*'] * len(df_group.columns)  # adding a row
             df_group.index = df_group.index + 10  # shifting index
-            df_group = df_group.sort_index()
-            df_group = df_group.reset_index(drop=True)
+            df_group = df_group.sort_index().reset_index(drop=True)
             # print('df_group', df_group.head(12))
             for i in range(10, len(df_group)):  # iterate over indices of words in sentence
                 history_df = df_group.iloc[i - 10:i + 1].reset_index(drop=True)
                 curr_severity = df_group.loc[i, 'Severity']
                 self.histories.append((history_df, curr_severity))  # add to histories this history and tag
                 # print(i, end=',')
-                for j in range(10):
+                for j in range(10):  # TODO: maybe range(1, 11)
                     self.add2dict((history_df.loc[j, 'Severity'], j, curr_severity), 'f100')
                     self.add2dict((j, curr_severity), 'f101')  # value will be distance of temperatures.
-                    self.add2dict((history_df.loc[j, 'Traffic_Signal'], j, curr_severity), 'f102')  # value will be distance of traffic_signal.
+                    self.add2dict((history_df.loc[j, 'Traffic_Signal'], j, curr_severity),
+                                  'f102')  # value will be distance of traffic_signal.
                     self.add2dict((j, curr_severity), 'f103')  # value will be distance of pressure.
                     self.add2dict((j, curr_severity), 'f104')  # value will be distance of distance.
 
@@ -78,11 +78,7 @@ class Mmem:
                     self.features_id_dict[feature_name][key] = self.n_dict[feature_name]
                     self.n_dict[feature_name] += 1
             self.n_total_features = self.n_dict[feature_name]
-
-    @staticmethod
-    def get_distance(history_df, j, col_name):
-        return norm(history_df.loc[j, col_name] - history_df.tail(1)[col_name], 1)
-    # TODO: try 1 -
+            print(feature_name, self.n_total_features)
 
     # history = (sentence_{1:n}(list), T_2, T_1, i)
     def history2features(self, history_df, curr_severity):
@@ -96,62 +92,48 @@ class Mmem:
 
             key = (j, curr_severity)
             if key in self.features_id_dict['f101']:
-                features[self.features_id_dict['f101'][key]] = self.get_distance(history_df, j, 'Temperature(F)')
+                x_j = history_df.loc[j, 'Temperature(F)']
+                if x_j != '*':
+                    features[self.features_id_dict['f101'][key]] = \
+                        abs(history_df.iloc[-1, history_df.columns.get_loc('Temperature(F)')] - x_j)
+                    # TODO: try 1 -
 
             key = (history_df.loc[j, 'Traffic_Signal'], j, curr_severity)
             if key in self.features_id_dict['f102']:
                 features[self.features_id_dict['f102'][key]] = 1
 
-            key = (j, curr_severity)
-            if key in self.features_id_dict['f103']:
-                features[self.features_id_dict['f103'][key]] = self.get_distance(history_df, j, 'Pressure(in)')
+            # key = (j, curr_severity)
+            # if key in self.features_id_dict['f103']:
+            #     x_j = history_df.loc[j, 'Pressure(in)']
+            #     if x_j != '*':
+            #         features[self.features_id_dict['f103'][key]] = \
+            #         abs(history_df.iloc[-1, history_df.columns.get_loc('Pressure(in)')]-x_j)
 
             key = (j, curr_severity)
             if key in self.features_id_dict['f104']:
-                features[self.features_id_dict['f104'][key]] = self.get_distance(history_df, j, 'Distance(mi)')
-
-
-
-        # features += [self.features_id_dict['f100'][(cur_word.lower(), cur_tag)]] \
-        #     if (cur_word.lower(), cur_tag) in self.features_id_dict['f100'] else []
-        # for suffix_len in range(1, 5):  # [1, 2, 3, 4]
-        #     features += [self.features_id_dict['f101'][(cur_word.lower()[-suffix_len:], cur_tag)]] \
-        #         if (cur_word.lower()[-suffix_len:], cur_tag) in self.features_id_dict['f101'] else []
-        # for prefix_len in range(1, 5):  # [1, 2, 3, 4]
-        #     features += [self.features_id_dict['f102'][(cur_word.lower()[:prefix_len], cur_tag)]] \
-        #         if (cur_word.lower()[:prefix_len], cur_tag) in self.features_id_dict['f102'] else []
-        # features += [self.features_id_dict['f103'][(pre_prev_tag, prev_tag, cur_tag)]] \
-        #     if (pre_prev_tag, prev_tag, cur_tag) in self.features_id_dict['f103'] else []
-        # features += [self.features_id_dict['f104'][(prev_tag, cur_tag)]] \
-        #     if (prev_tag, cur_tag) in self.features_id_dict['f104'] else []
-        # features += [self.features_id_dict['f105'][(cur_tag,)]] \
-        #     if (cur_tag,) in self.features_id_dict['f105'] else []
-        # features += [self.features_id_dict['f106'][(prev_word.lower(), cur_tag)]] \
-        #     if (prev_word.lower(), cur_tag) in self.features_id_dict['f106'] else []
-        # features += [self.features_id_dict['f107'][(next_word, cur_tag)]] \
-        #     if (next_word, cur_tag) in self.features_id_dict['f107'] else []
-        # features += [self.features_id_dict['f108'][(pre_prev_word.lower(), prev_word.lower(), cur_tag)]] \
-        #     if (pre_prev_word.lower(), prev_word.lower(), cur_tag) in self.features_id_dict['f108'] else []
-        # features += [self.features_id_dict['f109'][(i == 0, cur_word[0].isupper(), cur_tag)]] \
-        #     if (i == 0, cur_word[0].isupper(), cur_tag) in self.features_id_dict['f109'] else []
-        # features += [self.features_id_dict['f110'][(cur_word_digit, cur_tag)]] \
-        #     if (cur_word_digit, cur_tag) in self.features_id_dict['f110'] else []
+                x_j = history_df.loc[j, 'Distance(mi)']
+                if x_j != '*':
+                    features[self.features_id_dict['f104'][key]] = \
+                        abs(history_df.iloc[-1, history_df.columns.get_loc('Distance(mi)')] - x_j)
 
         return features
 
-
     def extract_features(self):
+        i = 0
         for history, cur_tag in self.histories:
-            self.train_features[(history, cur_tag)] = self.history2features(history, cur_tag)
-            for y_ in self.tag_set:
-                self.all_tags_features[(history, y_)] = self.history2features(history, y_)
-
+            if i % 500 == 0:
+                print(i, end=', ')
+            i += 1
+            curr_features = self.history2features(history, cur_tag)
+            self.train_features[(tuple(history), cur_tag)] = curr_features
+            self.all_tags_features[(tuple(history), cur_tag)] = curr_features
+            self.all_tags_features[(tuple(history), 1 - cur_tag)] = self.history2features(history, 1 - cur_tag)
 
     def linear_term(self, w):
         """calculate the linear term of the likelihood function: sum for each i: w*f(x_i,y_i)"""
         linear_sum = 0
         for feature_dict in self.train_features.values():
-            linear_sum += (w[list(feature_dict.keys())]*list(feature_dict.values())).sum()
+            linear_sum += (w[list(feature_dict.keys())] * list(feature_dict.values())).sum()
         return linear_sum
 
     def normalization_term(self, w):
@@ -159,13 +141,14 @@ class Mmem:
         for history, _ in self.histories:
             log_sum = 0
             for y_ in self.tag_set:
-                feature_dict = self.all_tags_features[(history, y_)]
+                feature_dict = self.all_tags_features[(tuple(history), y_)]
                 log_sum += np.exp((w[list(feature_dict.keys())] * list(feature_dict.values())).sum())
-            self.all_tags_exp[history] = log_sum
+            self.all_tags_exp[tuple(history)] = log_sum
             all_sum += np.log(log_sum)
         return all_sum
 
     def empirical_counts(self):
+        print(self.n_total_features)
         self.train_vector_sum = np.zeros(self.n_total_features)
         for feature_dict in self.train_features.values():
             self.train_vector_sum[list(feature_dict.keys())] += list(feature_dict.values())
@@ -174,11 +157,11 @@ class Mmem:
         """calculate the expected term of the loss function"""
         all_sum = np.zeros(self.n_total_features)
         for history, cur_tag in self.histories:
-            deno = self.all_tags_exp[history]
+            deno = self.all_tags_exp[tuple(history)]
             for y_ in self.tag_set:
-                feature_dict = self.all_tags_features[(history, y_)]
+                feature_dict = self.all_tags_features[(tuple(history), y_)]
                 nom = np.exp((w[list(feature_dict.keys())] * list(feature_dict.values())).sum())
-                all_sum[list(self.all_tags_features[(history, y_)].values())] += (nom / deno)
+                all_sum[list(self.all_tags_features[(tuple(history), y_)].keys())] += (nom / deno)
         return all_sum
 
     def target_funcs(self, w):
@@ -198,6 +181,7 @@ class Mmem:
         w, _, _ = scipy.optimize.fmin_l_bfgs_b(func=self.target_funcs, x0=w, maxiter=100,
                                                epsilon=10 ** (-6), iprint=10)
         self.w = w
+        print('self.w', self.w)
 
     def save_model(self):
         """saves the train result to be able to test using them"""
@@ -211,15 +195,18 @@ class Mmem:
         print('Beginning train')
 
         self.create_features()
+        print('created features')
         self.preprocess_features()
+        print('preprocessed features')
         self.extract_features()
+        print('extracted features')
         self.minimize()
+        print('minimized features')
         self.save_model()
 
     def test(self, m=None, test_path=None, run_train=True):
         """test the model"""
-        if test_path is None:
-            test_path = 'data/test.csv'
+        test_path = 'data/test.csv'
         print("Beginning test on", test_path)
 
         if not run_train:
@@ -231,16 +218,11 @@ class Mmem:
         all_sentences = []  # list of sentences for saving predicted tags in competition
         all_t_tags = []  # list of true tags for comparing on test
         all_p_tags = []  # list of predicted tags
-        with open(test_path) as file:
-            lines = list(file)
-        for i, line in enumerate(lines):
-            print(i + 1, end=', ')
-            sentence = line.split()
-            if not self.comp:
-                sentence, t_tags = self.separate(sentence)
-                all_t_tags.append(t_tags)
-            else:
-                all_sentences.append(sentence)
+        df = pd.read_csv('/home/student/Desktop/ML/data/test.csv').head(10000)
+        grouped = df.groupby('Airport_Code')
+        for group_id, (group, df_group) in enumerate(grouped):
+            print(group_id, len(df_group), end=', ')
+            all_t_tags.append(df_group)
             p_tags = self.viterbi_beam(sentence)
             all_p_tags.append(p_tags)
         if not self.comp:
@@ -321,14 +303,14 @@ class Mmem:
             tags.append(cur_tag)
         return words, tags
 
-    def pi_q(self, pi, sentence, k, t, u, v):
+    def pi_q(self, pi, history_df, k, t, x):
         """calculate pi"""
-        deno = 0
-        history = (sentence, t, u, k - 1)
-        nome = np.exp(self.w[self.history2features(history, v)].sum())
-        for y_ in self.tag_set:
-            deno += np.exp(self.w[self.history2features(history, y_)].sum())
-        return pi[(k - 1, t, u)] * nome / deno
+        history_df['Severity'] = [t, ] + x
+        feature_dict = self.history2features(history_df, x[-1])
+        nome = np.exp((self.w[list(feature_dict.keys())] * list(feature_dict.values())).sum())
+        feature_dict = self.history2features(history_df, 1 - x[-1])
+        deno = np.exp(self.w[list(feature_dict.keys())] * list(feature_dict.values())).sum() + nome
+        return pi[(k - 1, [t, ] + x[:-1])] * nome / deno
 
     def viterbi_beam(self, sentence):
         """perform viterbi with beam-search heuristics"""
@@ -365,30 +347,33 @@ class Mmem:
             tag_list = [bp[(k + 2, tag_list[0], tag_list[1])]] + tag_list
         return tag_list
 
-    def viterbi(self, sentence):
+    def viterbi(self, df_group):
         """perform viterbi"""
+        for i in range(10):
+            df_group.loc[-i] = ['*'] * len(df_group.columns)  # adding a row
+        df_group.index = df_group.index + 10  # shifting index
+        df_group = df_group.sort_index().reset_index(drop=True)
+
         pi = {}
         bp = {}
-        pi[(0, '*', '*')] = 1
-        for k in range(1, len(sentence) + 1):
-            if k == 1:
-                s_1 = ['*']
-                s_2 = ['*']
-            elif k == 2:
-                s_1 = self.tag_set
-                s_2 = ['*']
-            else:
-                s_1 = self.tag_set
-                s_2 = self.tag_set
-            for u in s_1:
-                for v in self.tag_set:
-                    bp[(k, u, v)] = max(s_2, key=lambda t: self.pi_q(pi, sentence, k, t, u, v))
-                    pi[(k, u, v)] = self.pi_q(pi, sentence, k, bp[(k, u, v)], u, v)
+        pi[0, ('*',) * 10] = 1
+        for k in range(10, len(df_group)):
+            history_df = df_group.iloc[k - 10:k + 1].reset_index(drop=True)
+            curr_severity = df_group.loc[k, 'Severity']
 
-        t = list(
-            max([(u, v) for u in self.tag_set for v in self.tag_set], key=lambda uv: pi[(len(sentence), uv[0], uv[1])]))
-        for k in reversed(range(1, len(sentence) - 1)):
-            t = [bp[(k + 2, t[0], t[1])]] + t
+            if k < 20:
+                ss = [['*']] * (20 - k) + [self.tag_set] * (k - 10)
+            else:
+                ss = [[0, 1]] * 10
+
+            for x in itertools.product(*ss[1:]):
+                bp[(k, x)] = max(ss[0], key=lambda t: self.pi_q(pi, history_df, k, t, x))
+                pi[(k, x)] = self.pi_q(pi, history_df, k, bp[(k, x)], x)
+
+        t = list(max([x for x in itertools.product(*ss[1:] + [self.tag_set])],
+                 key=lambda x: pi[(len(history_df), x)]))
+        for k in reversed(range(1, len(history_df) - 1)):
+            t = [bp[(k + 2, t[:10])]] + t
         return t
 
 
