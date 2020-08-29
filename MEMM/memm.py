@@ -2,6 +2,7 @@ import itertools
 import time
 from collections import OrderedDict
 from itertools import combinations
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from numpy.linalg import norm
 import numpy as np
 import pickle
@@ -179,7 +180,7 @@ class Mmem:
         self.empirical_counts()
         w = np.random.rand(self.n_total_features) / 100 - 0.005  # initiates the weigths to small values
         w, _, _ = scipy.optimize.fmin_l_bfgs_b(func=self.target_funcs, x0=w, maxiter=100,
-                                               epsilon=10 ** (-6), iprint=10)
+                                               epsilon=10 ** (-6), iprint=1)
         self.w = w
         print('self.w', self.w)
 
@@ -204,9 +205,9 @@ class Mmem:
         print('minimized features')
         self.save_model()
 
-    def test(self, m=None, test_path=None, run_train=True):
+    def test(self, run_train=True):
         """test the model"""
-        test_path = 'data/test.csv'
+        test_path = 'data/dfs.csv'
         print("Beginning test on", test_path)
 
         if not run_train:
@@ -218,99 +219,41 @@ class Mmem:
         all_sentences = []  # list of sentences for saving predicted tags in competition
         all_t_tags = []  # list of true tags for comparing on test
         all_p_tags = []  # list of predicted tags
-        df = pd.read_csv('/home/student/Desktop/ML/data/test.csv').head(10000)
+        df = pd.read_csv('/home/student/Desktop/ML/dfs.csv').head(10000)
         grouped = df.groupby('Airport_Code')
         for group_id, (group, df_group) in enumerate(grouped):
             print(group_id, len(df_group), end=', ')
+            # if len(df_group) < 20:
+            #     continue
             all_t_tags.append(df_group)
-            p_tags = self.viterbi_beam(sentence)
+            p_tags = self.viterbi(df_group)
             all_p_tags.append(p_tags)
-        if not self.comp:
-            self.evaluate(all_p_tags, all_t_tags)
-        else:
-            self.save_tags(all_sentences, all_p_tags)
+        self.evaluate(all_t_tags, all_p_tags)
 
-    def save_tags(self, all_sentences, all_p_tags):
-        """when running cometition, save the predicted tags """
-        string = ''
-        for sentence, tags in zip(all_sentences, all_p_tags):
-            for word, tag in zip(sentence, tags):
-                string += word + '_' + tag + ' '
-            string += '\n'
-        with open('../comp_m{}_314828732.wtag'.format(self.name), 'w') as file:
-            file.write(string)
-
-    def evaluate(self, all_p_tags, all_t_tags):
+    def evaluate(self, all_t_tags, all_p_tags):
         """calculates the accuracy and confusion matrix for prediction"""
-        tags = np.concatenate(all_p_tags)
-        t_tags = np.concatenate(all_t_tags)
-        self.accuracy = np.array(tags == t_tags).mean()
+        all_p_tags = [item for sublist in all_p_tags for item in sublist]
+        all_t_tags = [item for sublist in all_t_tags for item in sublist]
 
-        count_dict = {y_true: {y_pred: 0 for y_pred in self.tag_set} for y_true in self.tag_set}
-        for t_tag, p_tag in zip(t_tags, tags):
-            try:
-                count_dict[t_tag][p_tag] += 1
-            except KeyError as e:
-                continue
-        acc_dict = {}
-        for tag in self.tag_set:
-            if sum(count_dict[tag].values()) != 0:
-                acc_dict[tag] = count_dict[tag][tag] / sum(count_dict[tag].values())
-            else:
-                acc_dict[tag] = 999  # to prevent seeing tags that didn't appear.
-        cols = sorted(acc_dict, key=acc_dict.get)[:10]  # 10 worse tags.
-        self.tag_set = cols + list(self.tag_set - set(cols))  # so tag set will have same order as cols.
-
-        cm_table = np.zeros((len(self.tag_set), len(cols)))
-        count_table = np.zeros((len(self.tag_set), len(cols)))
-        for i, y_pred in enumerate(self.tag_set):
-            for j, y_true in enumerate(cols):
-                if sum(count_dict[y_true].values()) != 0 and count_dict[y_true][y_pred] != 0:
-                    cm_table[i][j] = count_dict[y_true][y_pred] / sum(count_dict[y_true].values())
-                    count_table[i][j] = count_dict[y_true][y_pred]
-                else:
-                    cm_table[i][j] = np.nan  # looks better.
-                    count_table[i][j] = np.nan  # looks better.
-        percent_cm = self.get_cm(cm_table, cols, self.tag_set) + '\n'
-        count_cm = self.get_cm(count_table, cols, self.tag_set) + '\n'
-        print("The accuracy is:", self.accuracy)
-        # saves results of testing.
+        results = precision_recall_fscore_support(all_t_tags, all_p_tags, average='binary')
+        results = [accuracy_score(all_t_tags, all_p_tags)] + list(results)
+        results = str(dict(zip(['accuracy', 'precision', 'recall', 'f1'], results)))
+        print(results)
         with open(self.model_dir + "accuracy.txt", 'w') as file:
-            file.write(str(self.accuracy))
-        with open(self.model_dir + "percent_cm.txt", 'w') as file:
-            file.write(percent_cm)
-        with open(self.model_dir + "count_cm.txt", 'w') as file:
-            file.write(count_cm)
-
-    @staticmethod
-    def get_cm(table, cols_title, rows_title):
-        """generates string of confusion matrix"""
-        size = 6
-        sep = "  "
-        table_str = sep.join(str(x).rjust(size) for x in [""] + cols_title) + '\n'
-        for i in range(len(table)):
-            row = [round(x, 4) for x in table[i]]
-            table_str += sep.join(str(x).rjust(size) for x in [list(rows_title)[i]] + row) + '\n'
-        return table_str
-
-    @staticmethod
-    def separate(sentence):
-        """separates words and tags in a sentence"""
-        words, tags = [], []
-        for i in range(len(sentence)):
-            cur_word, cur_tag = sentence[i].split('_')
-            words.append(cur_word)
-            tags.append(cur_tag)
-        return words, tags
+            file.write(results)
+        # with open(self.model_dir + "percent_cm.txt", 'w') as file:
+        #     file.write(percent_cm)
+        # with open(self.model_dir + "count_cm.txt", 'w') as file:
+        #     file.write(count_cm)
 
     def pi_q(self, pi, history_df, k, t, x):
         """calculate pi"""
-        history_df['Severity'] = [t, ] + x
+        history_df['Severity'] = [t, ] + list(x)
         feature_dict = self.history2features(history_df, x[-1])
         nome = np.exp((self.w[list(feature_dict.keys())] * list(feature_dict.values())).sum())
         feature_dict = self.history2features(history_df, 1 - x[-1])
         deno = np.exp(self.w[list(feature_dict.keys())] * list(feature_dict.values())).sum() + nome
-        return pi[(k - 1, [t, ] + x[:-1])] * nome / deno
+        return pi[(k - 1, (t, ) + x[:-1])] * nome / deno
 
     def viterbi_beam(self, sentence):
         """perform viterbi with beam-search heuristics"""
@@ -349,6 +292,7 @@ class Mmem:
 
     def viterbi(self, df_group):
         """perform viterbi"""
+        print('len', len(df_group))
         for i in range(10):
             df_group.loc[-i] = ['*'] * len(df_group.columns)  # adding a row
         df_group.index = df_group.index + 10  # shifting index
@@ -356,24 +300,26 @@ class Mmem:
 
         pi = {}
         bp = {}
-        pi[0, ('*',) * 10] = 1
+        # pi = {(k, ('*',) * 10): 1 for }
+        pi[9, ('*',) * 10] = 1
         for k in range(10, len(df_group)):
             history_df = df_group.iloc[k - 10:k + 1].reset_index(drop=True)
             curr_severity = df_group.loc[k, 'Severity']
 
             if k < 20:
-                ss = [['*']] * (20 - k) + [self.tag_set] * (k - 10)
+                ss = [['*']] * (20 - k) + [self.tag_set] * (k - 9)
             else:
-                ss = [[0, 1]] * 10
+                ss = [self.tag_set] * 11
 
             for x in itertools.product(*ss[1:]):
                 bp[(k, x)] = max(ss[0], key=lambda t: self.pi_q(pi, history_df, k, t, x))
                 pi[(k, x)] = self.pi_q(pi, history_df, k, bp[(k, x)], x)
-
-        t = list(max([x for x in itertools.product(*ss[1:] + [self.tag_set])],
-                 key=lambda x: pi[(len(history_df), x)]))
-        for k in reversed(range(1, len(history_df) - 1)):
-            t = [bp[(k + 2, t[:10])]] + t
+        # print(pi)
+        t = list(max([x for x in itertools.product(*ss[1:])],
+                 key=lambda x: pi[(len(df_group) - 1, x)]))
+        for k in reversed(range(10, len(df_group))):
+            t = [bp[(k, tuple(t[:10]))]] + t
+        print(t)
         return t
 
 
@@ -386,7 +332,7 @@ if __name__ == '__main__':
     #         break
     #     print("invalid input. please enter 'y' or 'n'")
 
-    run_train = True
+    run_train = False
     thre = 1
     la = 0.1
 
