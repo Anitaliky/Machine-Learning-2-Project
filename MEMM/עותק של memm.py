@@ -19,7 +19,8 @@ class Mmem:
         self.tag_set = [0, 1]
         self.histories = []
         self.n_total_features = 0  # Total number of features accumulated
-        self.features_list = ['f100', 'f101', 'f102', 'f104', 'f110', 'f201', 'f202', 'f204']
+        self.features_list = ['f100', 'f101', 'f102', 'f103', 'f104', 'f105', 'f106', 'f107', 'f108', 'f109', 'f110']
+        self.features_list = ['f100', 'f101', 'f102', 'f104', 'f110']
         self.features_count = {f_name: {} for f_name in self.features_list}
         self.threshold = threshold  # feature count threshold - empirical count must be higher than this
         self.la = la
@@ -38,23 +39,9 @@ class Mmem:
         self.minimization_dict = {}
         self.accuracy = 0
         self.skip_cols = ['Airport_Code', 'Unnamed: 0', 'Severity']
-        self.bars_dict = {}
-        self.cols_dict = {}
 
     def tup_of_tups(self, df):
         return tuple(df.itertuples(index=False, name=None))
-
-    def create_bars(self, df, col):
-        min_val = df['Temperature(F)'].quantile(.025)
-        max_val = df['Temperature(F)'].quantile(.975)
-        return [min_val + i * (max_val - min_val) / 20 for i in range(21)]
-
-    def get_bar(self, bars, val):
-        i = 0
-        bars_len = len(bars)
-        while i < bars_len and bars[i] < val:
-            i += 1
-        return i
 
     def add2dict(self, key, dictionary):
         """"add 1 to the key in the dictionary (or create the key with value 1)."""
@@ -88,33 +75,22 @@ class Mmem:
             df_group = df_group.sort_index().reset_index(drop=True)
             # print('df_group', df_group.head(12))
             for i in range(10, len(df_group)):  # iterate over indices of words in sentence
-                row_i = df_group.iloc[i]
                 history_df = df_group.iloc[i - 10:i + 1].reset_index(drop=True)
                 curr_severity = df_group.loc[i, 'Severity']
-                self.cols_dict = dict(zip(df.columns, range(len(df))))
                 self.histories.append((history_df, curr_severity))  # add to histories this history and tag
-                # self.histories.append((self.tup_of_tups(history_df), curr_severity))  # add to histories this history and tag
-
-                temp_bars = self.create_bars(df, 'Temperature(F)')
-                temp_bar_i = self.get_bar(temp_bars, row_i['Temperature(F)'])
-                self.bars_dict['Temperature(F)'] = temp_bars
-                self.add2dict((temp_bar_i, curr_severity), 'f101')
-                self.add2dict((row_i['Traffic_Signal'], curr_severity), 'f102')
-                dist_bars = self.create_bars(df, 'Distance(mi)')
-                dist_bar_i = self.get_bar(dist_bars, row_i['Distance(mi)'])
-                self.add2dict((dist_bar_i, curr_severity), 'f104')
-                self.bars_dict['Distance(mi)'] = dist_bars
+                # print(i, end=',')
                 for j in range(10):  # TODO: maybe range(1, 11)
-                    if history_df.loc[j, 'Severity'] == '*':
-                        continue
                     self.add2dict((history_df.loc[j, 'Severity'], j, curr_severity), 'f100')
+                    self.add2dict((j, curr_severity), 'f101')  # value will be distance of temperatures.
+                    self.add2dict((history_df.loc[j, 'Traffic_Signal'], j, curr_severity),
+                                  'f102')  # value will be distance of traffic_signal.
+                    # self.add2dict((j, curr_severity), 'f103')  # value will be distance of pressure.
+                    self.add2dict((j, curr_severity), 'f104')  # value will be distance of distance.
 
-                    temp_bar_j = self.get_bar(temp_bars, history_df.loc[j, 'Temperature(F)'])
-                    self.add2dict((temp_bar_i, temp_bar_j, j, curr_severity), 'f201')
-                    self.add2dict((history_df.loc[j, 'Traffic_Signal'], j, curr_severity), 'f202')
-                    dist_bar_j = self.get_bar(dist_bars, history_df.loc[j, 'Distance(mi)'])
-                    self.add2dict((dist_bar_i, dist_bar_j, j, curr_severity), 'f204')
-
+                for col_name in history_df.columns:
+                    if col_name in self.skip_cols:
+                        continue
+                    self.add2dict((col_name, curr_severity), 'f110')  # value will be the attributes of the row itself.
         # print('self.features_count', self.features_count)
         print('finished groups')
 
@@ -131,48 +107,50 @@ class Mmem:
             print(feature_name, self.n_total_features)
         print(self.features_id_dict)
 
+    # history = (sentence_{1:n}(list), T_2, T_1, i)
     def history2features(self, history_df, curr_severity):
         """return a list of features ID given a history"""
-        features = []
+        features = {}
         # adds the id of a feature if its conditions happens on the given history and tag
-        row_i = history_df.iloc[-1]
-
-        # TODO: add key check
-        temp_bar_i = self.get_bar(self.bars_dict['Temperature(F)'], row_i['Temperature(F)'])
-        key = (temp_bar_i, curr_severity)
-        if key in self.features_id_dict['f101']:
-            features.append(self.features_id_dict['f101'][key])
-        key = (row_i['Traffic_Signal'], curr_severity)
-        if key in self.features_id_dict['f102']:
-            features.append(self.features_id_dict['f102'][key])
-        dist_bar_i = self.get_bar(self.bars_dict['Distance(mi)'], row_i['Distance(mi)'])
-        key = (dist_bar_i, curr_severity)
-        if key in self.features_id_dict['f104']:
-            features.append(self.features_id_dict['f104'][key])
-
         for j in range(10):
-            if history_df.loc[j, 'Severity'] == '*':
-                continue
-
             key = (history_df.loc[j, 'Severity'], j, curr_severity)
             if key in self.features_id_dict['f100']:
-                features.append(self.features_id_dict['f100'][key])
+                features[self.features_id_dict['f100'][key]] = 1
 
-            # self.add2dict((temp_bar_i, temp_bar_j, j, curr_severity), 'f201')
-            # self.add2dict((history_df.loc[j, 'Traffic_Signal'], j, curr_severity), 'f202')
-            temp_bar_j = self.get_bar(self.bars_dict['Temperature(F)'], history_df.iloc[j]['Temperature(F)'])
-            key = (temp_bar_i, temp_bar_j, j, curr_severity)
-            if key in self.features_id_dict['f201']:
-                features.append(self.features_id_dict['f201'][key])
+            key = (j, curr_severity)
+            if key in self.features_id_dict['f101']:
+                x_j = history_df.loc[j, 'Temperature(F)']
+                if x_j != '*':
+                    features[self.features_id_dict['f101'][key]] = \
+                        abs(history_df.iloc[-1, history_df.columns.get_loc('Temperature(F)')] - x_j)
+                    # TODO: try 1 -
 
             key = (history_df.loc[j, 'Traffic_Signal'], j, curr_severity)
-            if key in self.features_id_dict['f202']:
-                features.append(self.features_id_dict['f202'][key])
+            if key in self.features_id_dict['f102']:
+                features[self.features_id_dict['f102'][key]] = 1
 
-            dist_bar_j = self.get_bar(self.bars_dict['Distance(mi)'], history_df.iloc[j]['Distance(mi)'])
-            key = (dist_bar_i, dist_bar_j, j, curr_severity)
-            if key in self.features_id_dict['f204']:
-                features.append(self.features_id_dict['f204'][key])
+            # key = (j, curr_severity)
+            # if key in self.features_id_dict['f103']:
+            #     x_j = history_df.loc[j, 'Pressure(in)']
+            #     if x_j != '*':
+            #         features[self.features_id_dict['f103'][key]] = \
+            #         abs(history_df.iloc[-1, history_df.columns.get_loc('Pressure(in)')]-x_j)
+
+            key = (j, curr_severity)
+            if key in self.features_id_dict['f104']:
+                x_j = history_df.loc[j, 'Distance(mi)']
+                if x_j != '*':
+                    features[self.features_id_dict['f104'][key]] = \
+                        abs(history_df.iloc[-1, history_df.columns.get_loc('Distance(mi)')] - x_j)
+
+        for col_name in history_df.columns:
+            key = (col_name, curr_severity)
+            if key in self.features_id_dict['f110']:
+                x_j = history_df.iloc[-1, history_df.columns.get_loc(col_name)]
+                if x_j > 1 or x_j < -1:
+                    continue
+                if x_j != '*':
+                    features[self.features_id_dict['f110'][key]] = x_j
 
         return features
 
@@ -192,8 +170,7 @@ class Mmem:
         """calculate the linear term of the likelihood function: sum for each i: w*f(x_i,y_i)"""
         linear_sum = 0
         for feature_dict in self.train_features.values():
-            # linear_sum += (w[list(feature_dict.keys())] * list(feature_dict.values())).sum()
-            linear_sum += w[feature_dict].sum()
+            linear_sum += (w[list(feature_dict.keys())] * list(feature_dict.values())).sum()
         return linear_sum
 
     def normalization_term(self, w):
@@ -202,8 +179,7 @@ class Mmem:
             log_sum = 0
             for y_ in self.tag_set:
                 feature_dict = self.all_tags_features[(self.tup_of_tups(history), y_)]
-                # log_sum += np.exp((w[list(feature_dict.keys())] * list(feature_dict.values())).sum())
-                log_sum += np.exp(w[feature_dict].sum())
+                log_sum += np.exp((w[list(feature_dict.keys())] * list(feature_dict.values())).sum())
             self.all_tags_exp[self.tup_of_tups(history)] = log_sum
             all_sum += np.log(log_sum)
         return all_sum
@@ -211,8 +187,7 @@ class Mmem:
     def empirical_counts(self):
         self.train_vector_sum = np.zeros(self.n_total_features)
         for feature_dict in self.train_features.values():
-            # self.train_vector_sum[list(feature_dict.keys())] += list(feature_dict.values())
-            self.train_vector_sum[feature_dict] += 1
+            self.train_vector_sum[list(feature_dict.keys())] += list(feature_dict.values())
 
     def expected_counts(self, w):
         """calculate the expected term of the loss function"""
@@ -223,9 +198,8 @@ class Mmem:
             # time.sleep(3)
             for y_ in self.tag_set:
                 feature_dict = self.all_tags_features[(self.tup_of_tups(history), y_)]
-                # nom = np.exp((w[list(feature_dict.keys())] * list(feature_dict.values())).sum())
-                nom = np.exp(w[feature_dict].sum())
-                all_sum[self.all_tags_features[(self.tup_of_tups(history), y_)]] += (nom / deno)
+                nom = np.exp((w[list(feature_dict.keys())] * list(feature_dict.values())).sum())
+                all_sum[list(self.all_tags_features[(self.tup_of_tups(history), y_)].keys())] += (nom / deno)
         return all_sum
 
     def func(self, w):
