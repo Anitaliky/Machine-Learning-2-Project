@@ -5,9 +5,10 @@ import torch.utils.data as data
 from torch import optim
 import pandas as pd
 
-REL_FEATURES = ['Stop', 'Station', 'Visibility(mi)', 'Junction', 'Crossing',
-       'Wind_Speed(mph)', 'Pressure(in)', 'Humidity(%)', 'Traffic_Signal',
-       'Temperature(F)', 'Distance(mi)', 'Start_Lat', 'Start_Lng']
+REL_FEATURES = ['Stop', 'Station', 'Visibility(mi)', 'Junction', 'Crossing', 'Wind_Speed(mph)',
+       'Pressure(in)', 'Humidity(%)', 'Traffic_Signal', 'Temperature(F)', 'Distance(mi)',
+       'Start_Lat', 'Start_Lng', 'Severity', 'Airport_Code', 'City', 'County', 'Street',
+       'Start_Time', 'End_Time', 'Civil_Twilight']
 
 df_train = pd.read_csv('train.csv')
 df_train = df_train[REL_FEATURES + ['Severity']]
