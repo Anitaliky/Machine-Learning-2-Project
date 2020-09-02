@@ -19,14 +19,16 @@ class Mmem:
         self.tag_set = [0, 1]
         self.histories = []
         self.n_total_features = 0  # Total number of features accumulated
-        self.features_list = ['f100', 'f101', 'f102', 'f103', 'f104', 'f105', 'f106', 'f107', 'f108', 'f109', 'f110', 'f111',
-                                      'f201', 'f202', 'f203', 'f204', 'f205', 'f206', 'f207', 'f208', 'f209', 'f210', 'f211',]
+        self.features_list = ['f100', 'f101', 'f102', 'f103', 'f104', 'f105', 'f106', 'f107',
+                                    'f108', 'f109', 'f110', 'f111',
+                                      'f201', 'f202', 'f203', 'f204', 'f205', 'f206', 'f207',
+                                    'f208', 'f209', 'f210', 'f211',]
         self.features_count = {f_name: {} for f_name in self.features_list}
         self.threshold = threshold  # feature count threshold - empirical count must be higher than this
         self.la = la
         self.B = 7
         self.hyper_str = str(self.threshold) + '_' + str(self.la)
-        self.model_dir = 'saves/'.format()
+        self.model_dir = '/home/student/Desktop/ML/MEMM/saves/'.format()
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
         self.n_dict = {}
@@ -78,26 +80,8 @@ class Mmem:
 
     def create_features(self):
         """defines and create the features, counting number of occurence of each one."""
-        df = pd.read_csv('/home/student/Desktop/ML/save1.csv')
+        df = pd.read_csv('/home/student/Desktop/ML/save.csv')
         print('len', len(df))
-        # df = df[df['Airport_Code']=='KCMH']
-        # df['Severity'] = df['Severity'].replace({1: 0})
-        # df['Severity'] = df['Severity'].replace({2: 0})
-        # df['Severity'] = df['Severity'].replace({3: 1})
-        # df['Severity'] = df['Severity'].replace({4: 1})
-
-        # min_max_scaler_temp = sklearn.preprocessing.MinMaxScaler()
-        # df['Temperature(F)'] = min_max_scaler_temp.fit_transform(df['Temperature(F)'].values.reshape(-1, 1))
-        # min_max_scaler_dist = sklearn.preprocessing.MinMaxScaler()
-        # df['Distance(mi)'] = min_max_scaler_dist.fit_transform(df['Distance(mi)'].values.reshape(-1, 1))
-        # min_max_scaler_lat = sklearn.preprocessing.MinMaxScaler()
-        # df['Start_Lat'] = min_max_scaler_lat.fit_transform(df['Start_Lat'].values.reshape(-1, 1))
-        # min_max_scaler_lng = sklearn.preprocessing.MinMaxScaler()
-        # df['Start_Lng'] = min_max_scaler_lng.fit_transform(df['Start_Lng'].values.reshape(-1, 1))
-        # self.minmax = {'Temperature(F)': min_max_scaler_temp, 'Distance(mi)': min_max_scaler_dist,
-        #                'Start_Lat': min_max_scaler_lat, 'Start_Lng': min_max_scaler_lng}
-        # with open(self.model_dir + 'minmax.pkl', 'wb') as file:
-        #     pickle.dump(self.minmax, file)
 
         grouped = df.groupby('City')
         print('num of groups', len(grouped))
@@ -114,7 +98,6 @@ class Mmem:
                 curr_severity = df_group.loc[i, 'Severity']
                 self.cols_dict = dict(zip(df.columns, range(len(df))))
                 self.histories.append((history_df, curr_severity))  # add to histories this history and tag
-                # self.histories.append((self.tup_of_tups(history_df), curr_severity))  # add to histories this history and tag
 
                 self.add2count((row_i['Traffic_Signal'], curr_severity), 'f101')
 
@@ -425,21 +408,12 @@ class Mmem:
                 self.features_id_dict = pickle.load(file)
             with open(self.model_dir + 'bars.pkl', 'rb') as file:
                 self.bars_dict = pickle.load(file)
-            with open(self.model_dir + 'minmax.pkl', 'rb') as file:
-                self.minmax = pickle.load(file)
 
+        print(self.features_id_dict.keys())
         all_sentences = []  # list of sentences for saving predicted tags in competition
         all_t_tags = []  # list of true tags for comparing on test
         all_p_tags = []  # list of predicted tags
         df = pd.read_csv('/home/student/Desktop/ML/save1.csv')
-
-        # df['Temperature(F)'] = self.minmax['Temperature(F)'].fit_transform(df['Temperature(F)'].values.reshape(-1, 1))
-        # min_max_scaler_dist = sklearn.preprocessing.MinMaxScaler()
-        # df['Distance(mi)'] = self.minmax['Distance(mi)'].fit_transform(df['Distance(mi)'].values.reshape(-1, 1))
-        # min_max_scaler_lat = sklearn.preprocessing.MinMaxScaler()
-        # df['Start_Lat'] = self.minmax['Start_Lat'].fit_transform(df['Start_Lat'].values.reshape(-1, 1))
-        # min_max_scaler_lng = sklearn.preprocessing.MinMaxScaler()
-        # df['Start_Lng'] = self.minmax['Start_Lng'].fit_transform(df['Start_Lng'].values.reshape(-1, 1))
 
         grouped = df.groupby('Airport_Code')
         for group_id, (group, df_group) in enumerate(grouped):
@@ -547,7 +521,7 @@ class Mmem:
             if k < self.markov*2:
                 ss = [['*']] * (self.markov*2 - k) + [self.tag_set] * (k - self.markov + 1)
             else:
-                ss = [self.tag_set] * self.markov + 1
+                ss = [self.tag_set] * (self.markov + 1)
 
             for x in itertools.product(*ss[1:]):
                 bp_k[(k, x)] = max(ss[0], key=lambda t: self.pi_q_beam(pi, history_df, k, t, x))
