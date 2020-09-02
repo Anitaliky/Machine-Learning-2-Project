@@ -19,7 +19,8 @@ class Mmem:
         self.tag_set = [0, 1]
         self.histories = []
         self.n_total_features = 0  # Total number of features accumulated
-        self.features_list = ['f100', 'f101', 'f102', 'f104', 'f110', 'f201', 'f202', 'f204']
+        self.features_list = ['f100', 'f101', 'f102', 'f103', 'f104', 'f105', 'f106', 'f107', 'f108', 'f109', 'f110', 'f111',
+                                      'f201', 'f202', 'f203', 'f204', 'f205', 'f206', 'f207', 'f208', 'f209', 'f210', 'f211',]
         self.features_count = {f_name: {} for f_name in self.features_list}
         self.threshold = threshold  # feature count threshold - empirical count must be higher than this
         self.la = la
@@ -41,6 +42,7 @@ class Mmem:
         self.bars_dict = {}
         self.cols_dict = {}
         self.minmax = {}
+        self.markov = 5
 
     @staticmethod
     def tup_of_tups(df):
@@ -67,65 +69,107 @@ class Mmem:
         else:
             self.features_count[dictionary][key] += 1
 
+    def add2count_cont(self, df, row_i, curr_severity, col, code):
+        bars = self.create_bars(df, col)
+        bar_i = self.get_bar(bars, row_i[col])
+        self.bars_dict[col] = bars
+        self.add2count((bar_i, curr_severity), code)
+        return bar_i
+
     def create_features(self):
         """defines and create the features, counting number of occurence of each one."""
-        df = pd.read_csv('/home/student/Desktop/ML/dfs.csv').head(100000)
+        df = pd.read_csv('/home/student/Desktop/ML/save1.csv')
         print('len', len(df))
         # df = df[df['Airport_Code']=='KCMH']
-        df['Severity'] = df['Severity'].replace({1: 0})
-        df['Severity'] = df['Severity'].replace({2: 0})
-        df['Severity'] = df['Severity'].replace({3: 1})
-        df['Severity'] = df['Severity'].replace({4: 1})
+        # df['Severity'] = df['Severity'].replace({1: 0})
+        # df['Severity'] = df['Severity'].replace({2: 0})
+        # df['Severity'] = df['Severity'].replace({3: 1})
+        # df['Severity'] = df['Severity'].replace({4: 1})
 
-        min_max_scaler_temp = sklearn.preprocessing.MinMaxScaler()
-        df['Temperature(F)'] = min_max_scaler_temp.fit_transform(df['Temperature(F)'].values.reshape(-1, 1))
-        min_max_scaler_dist = sklearn.preprocessing.MinMaxScaler()
-        df['Distance(mi)'] = min_max_scaler_dist.fit_transform(df['Distance(mi)'].values.reshape(-1, 1))
-        min_max_scaler_lat = sklearn.preprocessing.MinMaxScaler()
-        df['Start_Lat'] = min_max_scaler_lat.fit_transform(df['Start_Lat'].values.reshape(-1, 1))
-        min_max_scaler_lng = sklearn.preprocessing.MinMaxScaler()
-        df['Start_Lng'] = min_max_scaler_lng.fit_transform(df['Start_Lng'].values.reshape(-1, 1))
-        self.minmax = {'Temperature(F)': min_max_scaler_temp, 'Distance(mi)': min_max_scaler_dist,
-                       'Start_Lat': min_max_scaler_lat, 'Start_Lng': min_max_scaler_lng}
-        with open(self.model_dir + 'minmax.pkl', 'wb') as file:
-            pickle.dump(self.minmax, file)
+        # min_max_scaler_temp = sklearn.preprocessing.MinMaxScaler()
+        # df['Temperature(F)'] = min_max_scaler_temp.fit_transform(df['Temperature(F)'].values.reshape(-1, 1))
+        # min_max_scaler_dist = sklearn.preprocessing.MinMaxScaler()
+        # df['Distance(mi)'] = min_max_scaler_dist.fit_transform(df['Distance(mi)'].values.reshape(-1, 1))
+        # min_max_scaler_lat = sklearn.preprocessing.MinMaxScaler()
+        # df['Start_Lat'] = min_max_scaler_lat.fit_transform(df['Start_Lat'].values.reshape(-1, 1))
+        # min_max_scaler_lng = sklearn.preprocessing.MinMaxScaler()
+        # df['Start_Lng'] = min_max_scaler_lng.fit_transform(df['Start_Lng'].values.reshape(-1, 1))
+        # self.minmax = {'Temperature(F)': min_max_scaler_temp, 'Distance(mi)': min_max_scaler_dist,
+        #                'Start_Lat': min_max_scaler_lat, 'Start_Lng': min_max_scaler_lng}
+        # with open(self.model_dir + 'minmax.pkl', 'wb') as file:
+        #     pickle.dump(self.minmax, file)
 
-        grouped = df.groupby('Airport_Code')
+        grouped = df.groupby('City')
         print('num of groups', len(grouped))
         for group_id, (group, df_group) in enumerate(grouped):
             print(group_id, len(df_group), end=', ')
-            for i in range(10):
+            for i in range(self.markov):
                 df_group.loc[-i] = ['*'] * len(df_group.columns)  # adding a row
-            df_group.index = df_group.index + 10  # shifting index
+            df_group.index = df_group.index + self.markov  # shifting index
             df_group = df_group.sort_index().reset_index(drop=True)
             # print('df_group', df_group.head(12))
-            for i in range(10, len(df_group)):  # iterate over indices of words in sentence
+            for i in range(self.markov, len(df_group)):  # iterate over indices of words in sentence
                 row_i = df_group.iloc[i]
-                history_df = df_group.iloc[i - 10:i + 1].reset_index(drop=True)
+                history_df = df_group.iloc[i - self.markov:i + 1].reset_index(drop=True)
                 curr_severity = df_group.loc[i, 'Severity']
                 self.cols_dict = dict(zip(df.columns, range(len(df))))
                 self.histories.append((history_df, curr_severity))  # add to histories this history and tag
                 # self.histories.append((self.tup_of_tups(history_df), curr_severity))  # add to histories this history and tag
 
-                temp_bars = self.create_bars(df, 'Temperature(F)')
-                temp_bar_i = self.get_bar(temp_bars, row_i['Temperature(F)'])
-                self.bars_dict['Temperature(F)'] = temp_bars
-                self.add2count((temp_bar_i, curr_severity), 'f101')
-                self.add2count((row_i['Traffic_Signal'], curr_severity), 'f102')
-                dist_bars = self.create_bars(df, 'Distance(mi)')
-                dist_bar_i = self.get_bar(dist_bars, row_i['Distance(mi)'])
-                self.add2count((dist_bar_i, curr_severity), 'f104')
-                self.bars_dict['Distance(mi)'] = dist_bars
-                for j in range(10):  # TODO: maybe range(1, 11)
+                self.add2count((row_i['Traffic_Signal'], curr_severity), 'f101')
+
+                self.add2count((row_i['Crossing'], curr_severity), 'f102')
+
+                self.add2count((row_i['Junction'], curr_severity), 'f103')
+
+                self.add2count((row_i['Station'], curr_severity), 'f104')
+
+                self.add2count((row_i['Stop'], curr_severity), 'f105')
+
+                temp_bar_i = self.add2count_cont(df, row_i, curr_severity, 'Temperature(F)', 'f106')
+
+                dist_bar_i = self.add2count_cont(df, row_i, curr_severity, 'Distance(mi)', 'f107')
+
+                humi_bar_i = self.add2count_cont(df, row_i, curr_severity, 'Humidity(%)', 'f108')
+
+                wind_bar_i = self.add2count_cont(df, row_i, curr_severity, 'Wind_Speed(mph)', 'f109')
+
+                visi_bar_i = self.add2count_cont(df, row_i, curr_severity, 'Visibility(mi)', 'f110')
+
+                pres_bar_i = self.add2count_cont(df, row_i, curr_severity, 'Pressure(in)', 'f111')
+
+                for j in range(self.markov):  # TODO: maybe range(1, 11)
                     if history_df.loc[j, 'Severity'] == '*':
                         continue
                     self.add2count((history_df.loc[j, 'Severity'], j, curr_severity), 'f100')
 
-                    temp_bar_j = self.get_bar(temp_bars, history_df.loc[j, 'Temperature(F)'])
-                    self.add2count((temp_bar_i, temp_bar_j, j, curr_severity), 'f201')
-                    self.add2count((history_df.loc[j, 'Traffic_Signal'], j, curr_severity), 'f202')
-                    dist_bar_j = self.get_bar(dist_bars, history_df.loc[j, 'Distance(mi)'])
-                    self.add2count((dist_bar_i, dist_bar_j, j, curr_severity), 'f204')
+                    self.add2count((history_df.loc[j, 'Traffic_Signal'], j, curr_severity), 'f201')
+
+                    self.add2count((history_df.loc[j, 'Crossing'], j, curr_severity), 'f202')
+
+                    self.add2count((history_df.loc[j, 'Junction'], j, curr_severity), 'f203')
+
+                    self.add2count((history_df.loc[j, 'Station'], j, curr_severity), 'f204')
+
+                    self.add2count((history_df.loc[j, 'Stop'], j, curr_severity), 'f205')
+
+                    temp_bar_j = self.get_bar(self.bars_dict['Temperature(F)'], history_df.loc[j, 'Temperature(F)'])
+                    self.add2count((temp_bar_i, temp_bar_j, j, curr_severity), 'f206')
+
+                    dist_bar_j = self.get_bar(self.bars_dict['Distance(mi)'], history_df.loc[j, 'Distance(mi)'])
+                    self.add2count((dist_bar_i, dist_bar_j, j, curr_severity), 'f207')
+
+                    humi_bar_j = self.get_bar(self.bars_dict['Humidity(%)'], history_df.loc[j, 'Humidity(%)'])
+                    self.add2count((humi_bar_i, humi_bar_j, j, curr_severity), 'f208')
+
+                    wind_bar_j = self.get_bar(self.bars_dict['Wind_Speed(mph)'], history_df.loc[j, 'Wind_Speed(mph)'])
+                    self.add2count((wind_bar_i, wind_bar_j, j, curr_severity), 'f209')
+
+                    visi_bar_j = self.get_bar(self.bars_dict['Visibility(mi)'], history_df.loc[j, 'Visibility(mi)'])
+                    self.add2count((visi_bar_i, visi_bar_j, j, curr_severity), 'f210')
+
+                    pres_bar_j = self.get_bar(self.bars_dict['Pressure(in)'], history_df.loc[j, 'Pressure(in)'])
+                    self.add2count((pres_bar_i, pres_bar_j, j, curr_severity), 'f211')
 
         # print('self.features_count', self.features_count)
         print('finished groups')
@@ -149,19 +193,57 @@ class Mmem:
         # adds the id of a feature if its conditions happens on the given history and tag
         row_i = history_df.iloc[-1]
 
-        temp_bar_i = self.get_bar(self.bars_dict['Temperature(F)'], row_i['Temperature(F)'])
-        key = (temp_bar_i, curr_severity)
+        key = (row_i['Traffic_Signal'], curr_severity)
         if key in self.features_id_dict['f101']:
             features.append(self.features_id_dict['f101'][key])
-        key = (row_i['Traffic_Signal'], curr_severity)
+
+        key = (row_i['Crossing'], curr_severity)
         if key in self.features_id_dict['f102']:
             features.append(self.features_id_dict['f102'][key])
-        dist_bar_i = self.get_bar(self.bars_dict['Distance(mi)'], row_i['Distance(mi)'])
-        key = (dist_bar_i, curr_severity)
+
+        key = (row_i['Junction'], curr_severity)
+        if key in self.features_id_dict['f103']:
+            features.append(self.features_id_dict['f103'][key])
+
+        key = (row_i['Station'], curr_severity)
         if key in self.features_id_dict['f104']:
             features.append(self.features_id_dict['f104'][key])
 
-        for j in range(10):
+        key = (row_i['Stop'], curr_severity)
+        if key in self.features_id_dict['f105']:
+            features.append(self.features_id_dict['f105'][key])
+
+        temp_bar_i = self.get_bar(self.bars_dict['Temperature(F)'], row_i['Temperature(F)'])
+        key = (temp_bar_i, curr_severity)
+        if key in self.features_id_dict['f106']:
+            features.append(self.features_id_dict['f106'][key])
+
+        dist_bar_i = self.get_bar(self.bars_dict['Distance(mi)'], row_i['Distance(mi)'])
+        key = (dist_bar_i, curr_severity)
+        if key in self.features_id_dict['f107']:
+            features.append(self.features_id_dict['f107'][key])
+
+        humi_bar_i = self.get_bar(self.bars_dict['Humidity(%)'], row_i['Humidity(%)'])
+        key = (humi_bar_i, curr_severity)
+        if key in self.features_id_dict['f108']:
+            features.append(self.features_id_dict['f108'][key])
+
+        wind_bar_i = self.get_bar(self.bars_dict['Wind_Speed(mph)'], row_i['Distance(mi)'])
+        key = (wind_bar_i, curr_severity)
+        if key in self.features_id_dict['f109']:
+            features.append(self.features_id_dict['f109'][key])
+
+        visi_bar_i = self.get_bar(self.bars_dict['Visibility(mi)'], row_i['Visibility(mi)'])
+        key = (visi_bar_i, curr_severity)
+        if key in self.features_id_dict['f110']:
+            features.append(self.features_id_dict['f110'][key])
+
+        pres_bar_i = self.get_bar(self.bars_dict['Pressure(in)'], row_i['Pressure(in)'])
+        key = (pres_bar_i, curr_severity)
+        if key in self.features_id_dict['f111']:
+            features.append(self.features_id_dict['f111'][key])
+
+        for j in range(self.markov):
             if history_df.loc[j, 'Severity'] == '*':
                 continue
 
@@ -169,21 +251,55 @@ class Mmem:
             if key in self.features_id_dict['f100']:
                 features.append(self.features_id_dict['f100'][key])
 
-            # self.add2count((temp_bar_i, temp_bar_j, j, curr_severity), 'f201')
-            # self.add2count((history_df.loc[j, 'Traffic_Signal'], j, curr_severity), 'f202')
-            temp_bar_j = self.get_bar(self.bars_dict['Temperature(F)'], history_df.iloc[j]['Temperature(F)'])
-            key = (temp_bar_i, temp_bar_j, j, curr_severity)
+            key = (history_df.loc[j, 'Traffic_Signal'], j, curr_severity)
             if key in self.features_id_dict['f201']:
                 features.append(self.features_id_dict['f201'][key])
 
-            key = (history_df.loc[j, 'Traffic_Signal'], j, curr_severity)
+            key = (history_df.loc[j, 'Crossing'], j, curr_severity)
             if key in self.features_id_dict['f202']:
                 features.append(self.features_id_dict['f202'][key])
 
-            dist_bar_j = self.get_bar(self.bars_dict['Distance(mi)'], history_df.iloc[j]['Distance(mi)'])
-            key = (dist_bar_i, dist_bar_j, j, curr_severity)
+            key = (history_df.loc[j, 'Junction'], j, curr_severity)
+            if key in self.features_id_dict['f203']:
+                features.append(self.features_id_dict['f203'][key])
+
+            key = (history_df.loc[j, 'Station'], j, curr_severity)
             if key in self.features_id_dict['f204']:
                 features.append(self.features_id_dict['f204'][key])
+
+            key = (history_df.loc[j, 'Stop'], j, curr_severity)
+            if key in self.features_id_dict['f205']:
+                features.append(self.features_id_dict['f205'][key])
+
+            temp_bar_j = self.get_bar(self.bars_dict['Temperature(F)'], history_df.iloc[j]['Temperature(F)'])
+            key = (temp_bar_i, temp_bar_j, j, curr_severity)
+            if key in self.features_id_dict['f206']:
+                features.append(self.features_id_dict['f206'][key])
+
+            dist_bar_j = self.get_bar(self.bars_dict['Distance(mi)'], history_df.iloc[j]['Distance(mi)'])
+            key = (dist_bar_i, dist_bar_j, j, curr_severity)
+            if key in self.features_id_dict['f207']:
+                features.append(self.features_id_dict['f207'][key])
+
+            humi_bar_j = self.get_bar(self.bars_dict['Humidity(%)'], history_df.iloc[j]['Humidity(%)'])
+            key = (humi_bar_i, humi_bar_j, j, curr_severity)
+            if key in self.features_id_dict['f208']:
+                features.append(self.features_id_dict['f208'][key])
+
+            wind_bar_j = self.get_bar(self.bars_dict['Wind_Speed(mph)'], history_df.iloc[j]['Wind_Speed(mph)'])
+            key = (wind_bar_i, wind_bar_j, j, curr_severity)
+            if key in self.features_id_dict['f209']:
+                features.append(self.features_id_dict['f209'][key])
+
+            visi_bar_j = self.get_bar(self.bars_dict['Visibility(mi)'], history_df.iloc[j]['Visibility(mi)'])
+            key = (visi_bar_i, visi_bar_j, j, curr_severity)
+            if key in self.features_id_dict['f210']:
+                features.append(self.features_id_dict['f210'][key])
+
+            pres_bar_j = self.get_bar(self.bars_dict['Pressure(in)'], history_df.iloc[j]['Pressure(in)'])
+            key = (pres_bar_i, pres_bar_j, j, curr_severity)
+            if key in self.features_id_dict['f211']:
+                features.append(self.features_id_dict['f211'][key])
 
         return features
 
@@ -197,7 +313,6 @@ class Mmem:
             self.train_features[(self.tup_of_tups(history), cur_tag)] = curr_features
             self.all_tags_features[(self.tup_of_tups(history), cur_tag)] = curr_features
             self.all_tags_features[(self.tup_of_tups(history), 1 - cur_tag)] = self.history2features(history, 1 - cur_tag)
-
 
     def linear_term(self, w):
         """calculate the linear term of the likelihood function: sum for each i: w*f(x_i,y_i)"""
@@ -300,7 +415,7 @@ class Mmem:
 
     def test(self, run_train=True):
         """test the model"""
-        test_path = 'data/dfs.csv'
+        test_path = 'data/train.csv'
         print("Beginning test on", test_path)
 
         if not run_train:
@@ -316,14 +431,15 @@ class Mmem:
         all_sentences = []  # list of sentences for saving predicted tags in competition
         all_t_tags = []  # list of true tags for comparing on test
         all_p_tags = []  # list of predicted tags
-        df = pd.read_csv('/home/student/Desktop/ML/dfs.csv').head(10000)
-        df['Temperature(F)'] = self.minmax['Temperature(F)'].fit_transform(df['Temperature(F)'].values.reshape(-1, 1))
-        min_max_scaler_dist = sklearn.preprocessing.MinMaxScaler()
-        df['Distance(mi)'] = self.minmax['Distance(mi)'].fit_transform(df['Distance(mi)'].values.reshape(-1, 1))
-        min_max_scaler_lat = sklearn.preprocessing.MinMaxScaler()
-        df['Start_Lat'] = self.minmax['Start_Lat'].fit_transform(df['Start_Lat'].values.reshape(-1, 1))
-        min_max_scaler_lng = sklearn.preprocessing.MinMaxScaler()
-        df['Start_Lng'] = self.minmax['Start_Lng'].fit_transform(df['Start_Lng'].values.reshape(-1, 1))
+        df = pd.read_csv('/home/student/Desktop/ML/save1.csv')
+
+        # df['Temperature(F)'] = self.minmax['Temperature(F)'].fit_transform(df['Temperature(F)'].values.reshape(-1, 1))
+        # min_max_scaler_dist = sklearn.preprocessing.MinMaxScaler()
+        # df['Distance(mi)'] = self.minmax['Distance(mi)'].fit_transform(df['Distance(mi)'].values.reshape(-1, 1))
+        # min_max_scaler_lat = sklearn.preprocessing.MinMaxScaler()
+        # df['Start_Lat'] = self.minmax['Start_Lat'].fit_transform(df['Start_Lat'].values.reshape(-1, 1))
+        # min_max_scaler_lng = sklearn.preprocessing.MinMaxScaler()
+        # df['Start_Lng'] = self.minmax['Start_Lng'].fit_transform(df['Start_Lng'].values.reshape(-1, 1))
 
         grouped = df.groupby('Airport_Code')
         for group_id, (group, df_group) in enumerate(grouped):
@@ -412,27 +528,26 @@ class Mmem:
     def viterbi_beam(self, df_group):
         """perform viterbi"""
         print('len', len(df_group))
-        for i in range(10):
+        for i in range(self.markov):
             df_group.loc[-i] = ['*'] * len(df_group.columns)  # adding a row
-        df_group.index = df_group.index + 10  # shifting index
+        df_group.index = df_group.index + self.markov  # shifting index
         df_group = df_group.sort_index().reset_index(drop=True)
 
         pi = {}
         bp = {}
-        # pi = {(k, ('*',) * 10): 1 for }
-        pi[9, ('*',) * 10] = 1
-        for k in range(10, len(df_group)):
+        pi[self.markov - 1, ('*',) * self.markov] = 1
+        for k in range(self.markov, len(df_group)):
             print(k, end=', ')
-            history_df = df_group.iloc[k - 10:k + 1].reset_index(drop=True)
+            history_df = df_group.iloc[k - self.markov:k + 1].reset_index(drop=True)
             curr_severity = df_group.loc[k, 'Severity']
             b_best_pi = {}
             pi_k = {}
             bp_k = {}
 
-            if k < 20:
-                ss = [['*']] * (20 - k) + [self.tag_set] * (k - 9)
+            if k < self.markov*2:
+                ss = [['*']] * (self.markov*2 - k) + [self.tag_set] * (k - self.markov + 1)
             else:
-                ss = [self.tag_set] * 11
+                ss = [self.tag_set] * self.markov + 1
 
             for x in itertools.product(*ss[1:]):
                 bp_k[(k, x)] = max(ss[0], key=lambda t: self.pi_q_beam(pi, history_df, k, t, x))
@@ -450,8 +565,8 @@ class Mmem:
 
         t = list(max([x for x in itertools.product(*ss[1:])],
                  key=lambda x: self.get_pi(pi, len(df_group)-1, x)))
-        for k in reversed(range(10, len(df_group))):
-            t = [bp[(k, tuple(t[:10]))]] + t
+        for k in reversed(range(self.markov, len(df_group))):
+            t = [bp[(k, tuple(t[:self.markov]))]] + t
         print(t)
         return t
 
@@ -463,24 +578,23 @@ class Mmem:
     def viterbi(self, df_group):
         """perform viterbi"""
         print('len', len(df_group))
-        for i in range(10):
+        for i in range(self.markov):
             df_group.loc[-i] = ['*'] * len(df_group.columns)  # adding a row
-        df_group.index = df_group.index + 10  # shifting index
+        df_group.index = df_group.index + self.markov  # shifting index
         df_group = df_group.sort_index().reset_index(drop=True)
 
         pi = {}
         bp = {}
-        # pi = {(k, ('*',) * 10): 1 for }
-        pi[9, ('*',) * 10] = 1
-        for k in range(10, len(df_group)):
+        pi[self.markov - 1, ('*',) * self.markov] = 1
+        for k in range(self.markov, len(df_group)):
             print(k, end=', ')
-            history_df = df_group.iloc[k - 10:k + 1].reset_index(drop=True)
+            history_df = df_group.iloc[k - self.markov:k + 1].reset_index(drop=True)
             curr_severity = df_group.loc[k, 'Severity']
 
-            if k < 20:
-                ss = [['*']] * (20 - k) + [self.tag_set] * (k - 9)
+            if k < self.markov*2:
+                ss = [['*']] * (self.markov*2 - k) + [self.tag_set] * (k - self.markov - 1)
             else:
-                ss = [self.tag_set] * 11
+                ss = [self.tag_set] * self.markov + 1
 
             for x in itertools.product(*ss[1:]):
                 bp[(k, x)] = max(ss[0], key=lambda t: self.pi_q(pi, history_df, k, t, x))
@@ -488,8 +602,8 @@ class Mmem:
         # print(pi)
         t = list(max([x for x in itertools.product(*ss[1:])],
                  key=lambda x: pi[(len(df_group) - 1, x)]))
-        for k in reversed(range(10, len(df_group))):
-            t = [bp[(k, tuple(t[:10]))]] + t
+        for k in reversed(range(self.markov, len(df_group))):
+            t = [bp[(k, tuple(t[:self.markov]))]] + t
         print(t)
         return t
 
@@ -504,7 +618,7 @@ if __name__ == '__main__':
     #     print("invalid input. please enter 'y' or 'n'")
 
     run_train = True
-    run_train = False
+    # run_train = False
     thre = 1
     la = 0.1
 
