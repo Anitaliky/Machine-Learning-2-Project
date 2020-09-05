@@ -1,0 +1,16 @@
+'State',
+'Day_Part'
+
+'Temperature(F)',
+'Wind_Chill(F)',
+'Humidity(%)',
+'Pressure(in)',
+'Visibility(mi)',
+'Wind_Speed(mph)',
+'Precipitation(in)',
+'Day_of_Week',
+'Weekend',
+'Month',
+'Year',
+
+'Accident_Count' > X

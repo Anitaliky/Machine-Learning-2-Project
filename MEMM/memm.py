@@ -14,33 +14,23 @@ pd.set_option('display.max_columns', None)
 class Memm:
 
     def __init__(self):
+        self.model_dir = '/home/student/Desktop/ML/MEMM/saves/'.format()
+        if not os.path.exists(self.model_dir):
+            os.makedirs(self.model_dir)
         self.likl_func = []
         self.likl_grad = []
         self.tag_set = [0, 1]
         self.histories = []
         self.n_total_features = 0  # Total number of features accumulated
 
-        self.cate_map = [('Traffic_Signal', '01'), ('Crossing', '02'), ('Junction', '03'), ('Station', '04'),
-                         ('Stop', '05'), ('Day_Of_Week', '13'), ('Weekend', '14'), ('Civil_Twilight', '15'),
-                         ('Hour', '16'), ('Street', '17')]
-        self.cont_map = [('Temperature(F)', '06'), ('Distance(mi)', '07'), ('Humidity(%)', '08'),
-                         ('Wind_Speed(mph)', '09'), ('Visibility(mi)', '10'), ('Pressure(in)', '11'),
-                         ('Duration', '12')]
+        self.cate_map = [('Day_of_Week', '01'), ('Weekend', '02'), ('Month', '03'), ('Year', '04')]
+
+        self.cont_map = [('Temperature(F)', '11'), ('Wind_Chill(F)', '12'), ('Humidity(%)', '13'),
+                         ('Pressure(in)', '14'), ('Visibility(mi)', '15'),
+                         ('Wind_Speed(mph)', '16'), ('Precipitation(in)', '17')]
+
         self.features_codes = ['f100'] + ['f' + i + c[1] for c in self.cate_map + self.cont_map for i in ['1', '2']]
         self.features_count = {f_name: {} for f_name in self.features_codes}
-
-        self.markov = 5
-        self.threshold = {f_name: 0 for f_name in
-                          self.features_codes}  # feature count threshold - empirical count must be higher than this
-        self.threshold['f117'] = 15
-        self.threshold['f217'] = 15
-        self.la = 0.1
-        self.B = 7
-        self.hyper_str = str(self.threshold) + '_' + str(self.la)
-
-        self.model_dir = '/home/student/Desktop/ML/MEMM/saves/'.format()
-        if not os.path.exists(self.model_dir):
-            os.makedirs(self.model_dir)
 
         self.n_dict = {}
         self.features_id_dict = {f_name: {} for f_name in self.features_codes}  # OrderedDict
@@ -53,6 +43,13 @@ class Memm:
         self.minimization_dict = {}
         self.bars_dict = {}
         self.cols_dict = {}
+
+        self.markov = 3
+        self.threshold = {f_name: 0 for f_name in
+                          self.features_codes}  # feature count threshold - empirical count must be higher than this
+        self.la = 0.1
+        self.B = 7
+        self.hyper_str = str(self.threshold) + '_' + str(self.la)
 
     @staticmethod
     def tup_of_tups(df):
@@ -72,7 +69,7 @@ class Memm:
             i += 1
         return i
 
-    def add10start(self, df_group):
+    def addstars(self, df_group):
         for i in range(self.markov):
             df_group.loc[-i] = ['*'] * len(df_group.columns)  # adding a row
         df_group.index = df_group.index + self.markov  # shifting index
@@ -86,11 +83,11 @@ class Memm:
         else:
             self.features_count[dictionary][key] += 1
 
-    def add2count_cont(self, df, row_i, curr_severity, col_name, code):
+    def add2count_cont(self, df, row_i, curr_dangerous, col_name, code):
         bars = self.create_bars(df, col_name)
         bar_i = self.get_bar(bars, row_i[col_name])
         self.bars_dict[col_name] = bars
-        self.add2count((bar_i, curr_severity), code)
+        self.add2count((bar_i, curr_dangerous), code)
         return bar_i
 
     def create_features(self):
@@ -98,40 +95,40 @@ class Memm:
         df = pd.read_csv('/home/student/Desktop/ML/save.csv')
         print('len', len(df))
 
-        grouped = df.groupby('City')
-        print('num of groups', len(grouped))
+        grouped = df.groupby(['State', 'Day_Part'])
+        print('num of groups', len(grouped), '(shouldnt be more that 156)')
         for group_id, (group, df_group) in enumerate(grouped):
             print(group_id, len(df_group), end=', ')
-            df_group = self.add10start(df_group)
+            df_group = self.addstars(df_group)
             for i in range(self.markov, len(df_group)):  # iterate over indices of words in sentence
                 row_i = df_group.iloc[i]
                 history_df = df_group.iloc[i - self.markov:i + 1].reset_index(drop=True)
-                curr_severity = df_group.loc[i, 'Severity']
+                curr_dangerous = df_group.loc[i, 'Dangerous']
                 self.cols_dict = dict(zip(df.columns, range(len(df))))
-                self.histories.append((history_df, curr_severity))  # add to histories this history and tag
+                self.histories.append((history_df, curr_dangerous))  # add to histories this history and tag
 
                 # categorical
                 for col_name, code in self.cate_map:
-                    self.add2count((row_i[col_name], curr_severity), 'f1' + code)
+                    self.add2count((row_i[col_name], curr_dangerous), 'f1' + code)
 
                 bars_i = {}
                 # continuous
                 for col_name, code in self.cont_map:
-                    bars_i[col_name] = self.add2count_cont(df, row_i, curr_severity, col_name, 'f1' + code)
+                    bars_i[col_name] = self.add2count_cont(df, row_i, curr_dangerous, col_name, 'f1' + code)
 
                 for j in range(self.markov):  # TODO: maybe range(1, self.markov)
-                    if history_df.loc[j, 'Severity'] == '*':
+                    if history_df.loc[j, 'Dangerous'] == '*':
                         continue
-                    self.add2count((history_df.loc[j, 'Severity'], j, curr_severity), 'f100')
+                    self.add2count((history_df.loc[j, 'Dangerous'], j, curr_dangerous), 'f100')
 
                     # categorical
                     for col_name, code in self.cate_map:
-                        self.add2count((history_df.loc[j, col_name], j, curr_severity), 'f2' + code)
+                        self.add2count((history_df.loc[j, col_name], j, curr_dangerous), 'f2' + code)
 
                     # continuous
                     for col_name, code in self.cont_map:
                         temp_bar_j = self.get_bar(self.bars_dict[col_name], history_df.loc[j, col_name])
-                        self.add2count((bars_i[col_name], temp_bar_j, j, curr_severity), 'f2' + code)
+                        self.add2count((bars_i[col_name], temp_bar_j, j, curr_dangerous), 'f2' + code)
 
         print('finished groups')
 
@@ -148,14 +145,14 @@ class Memm:
             print(feature_code, self.n_total_features)
         print(self.features_id_dict)
 
-    def history2features(self, history_df, curr_severity):
+    def history2features(self, history_df, curr_dangerous):
         """return a list of features ID given a history"""
         features = []
         row_i = history_df.iloc[-1]
 
         # categorical
         for col_name, code in self.cate_map:
-            key = (row_i[col_name], curr_severity)
+            key = (row_i[col_name], curr_dangerous)
             if key in self.features_id_dict['f1' + code]:
                 features.append(self.features_id_dict['f1' + code][key])
 
@@ -163,24 +160,24 @@ class Memm:
         # continuous
         for col_name, code in self.cont_map:
             bars_i[col_name] = self.get_bar(self.bars_dict[col_name], row_i[col_name])
-            key = (bars_i[col_name], curr_severity)
+            key = (bars_i[col_name], curr_dangerous)
             if key in self.features_id_dict['f1' + code]:
                 features.append(self.features_id_dict['f1' + code][key])
 
         for j in range(self.markov):
-            if history_df.loc[j, 'Severity'] == '*':
+            if history_df.loc[j, 'Dangerous'] == '*':
                 continue
 
             # categorical
             for col_name, code in self.cate_map:
-                key = (history_df.loc[j, col_name], j, curr_severity)
+                key = (history_df.loc[j, col_name], j, curr_dangerous)
                 if key in self.features_id_dict['f1' + code]:
                     features.append(self.features_id_dict['f1' + code][key])
 
             # continuous
             for col_name, code in self.cont_map:
                 bar_j = self.get_bar(self.bars_dict[col_name], history_df.iloc[j][col_name])
-                key = (bars_i[col_name], bar_j, j, curr_severity)
+                key = (bars_i[col_name], bar_j, j, curr_dangerous)
                 if key in self.features_id_dict['f2' + code]:
                     features.append(self.features_id_dict['f2' + code][key])
 
@@ -322,7 +319,7 @@ class Memm:
             #     continue
             all_t_tags.append(df_group)
             p_tags = self.viterbi_beam(df_group)
-            print(df_group['Severity'])
+            print(df_group['Dangerous'])
             all_p_tags.append(p_tags)
         self.evaluate(all_t_tags, all_p_tags)
 
@@ -344,7 +341,7 @@ class Memm:
         """calculate pi"""
         if (k - 1, (t,) + x[:-1]) not in pi:
             return -1
-        history_df['Severity'] = [t, ] + list(x)
+        history_df['Dangerous'] = [t, ] + list(x)
         feature_dict = self.history2features(history_df, x[-1])
         nome = np.exp(self.w[feature_dict].sum())
         feature_dict = self.history2features(history_df, 1 - x[-1])
@@ -355,7 +352,7 @@ class Memm:
     def viterbi_beam(self, df_group):
         """perform viterbi"""
         print('len', len(df_group))
-        df_group = self.add10start(df_group)
+        df_group = self.addstars(df_group)
 
         pi = {}
         bp = {}
