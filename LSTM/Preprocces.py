@@ -38,8 +38,8 @@ REL_FEATURES = [' _dewptm', ' _fog', ' _hail', ' _hum', ' _pressurem', ' _rain',
                 'noon', 'evening', 'month_cos', 'month_sin', 'hour_cos', 'hour_sin']
 LABEL = ['Temp']
 
-df_train = pd.read_csv('../Data Preprocessing/weather_data/df_full_train.csv')
-df_test = pd.read_csv('../Data Preprocessing/weather_data/df_full_test.csv')
+df_train = pd.read_csv('../weather_data/df_full_train.csv')
+df_test = pd.read_csv('../weather_data/df_full_test.csv')
 
 train_set = WeatherDataset(df_train)
 test_set = WeatherDataset(df_test)

@@ -15,7 +15,8 @@ class Main():
         trues = []
         preds = []
         loss_sum = 0
-        loss_function = nn.MSELoss()
+        # loss_function = nn.MSELoss()
+        loss_function = nn.CrossEntropyLoss()
         with torch.no_grad():
             for batch_idx, (x, y) in enumerate(test_loader):
                 if y.shape[1] == 1:
@@ -23,45 +24,40 @@ class Main():
                 p = self.model(x)
                 # print(torch.argmax(p, dim=1).shape)
                 # print(torch.squeeze(y).shape)
-                loss_sum += loss_function(torch.argmax(p, dim=1), torch.squeeze(y.type(torch.float32))) / self.batch_size  # calculate the loss
+                loss_sum += loss_function(p, torch.squeeze(y)) #/ self.batch_size  # calculate the loss
+                # loss_sum += loss_function(torch.argmax(p, dim=1), torch.squeeze(y.type(torch.float32))) / self.batch_size  # calculate the loss
                 trues += torch.squeeze(y)
                 preds += torch.argmax(p, dim=1)
-        print(loss_sum)
-        print(accuracy_score(trues, preds))
+        print('loss =', loss_sum)
+        print('accu =', accuracy_score(trues, preds))
 
     def train(self):
         loss_function = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(self.model.parameters(), lr=0.01)
+        optimizer = optim.Adam(self.model.parameters(), lr=0.1)
         self.model.zero_grad()
+
         for epoch in range(8):
+            los_sum = 0
+            print(len(train_loader))
             for batch_idx, (x, y) in enumerate(train_loader):
                 if y.shape[1] == 1:
                     continue
                 p = self.model(x)
-                # print(torch.squeeze(y).shape)
-                loss = loss_function(p, torch.squeeze(y)) / self.batch_size  # calculate the loss
+
+                loss = loss_function(p, torch.squeeze(y)) #/ self.batch_size  # calculate the loss
                 loss.backward()
+
+                los_sum += loss
+
                 if batch_idx % 100 == 0:
-                    print(self.model.hidden2temp.weight.grad)
+                    # print(self.model.hidden2temp.weight.grad)
                     print(loss.data)
                 if batch_idx % self.batch_size == 0 and batch_idx != 0:  # make a step
                     optimizer.step()
                     self.model.zero_grad()
-                    for name, param in self.model.named_parameters():
-                        if param.requires_grad:
-                            print(name, param.grad, end=', ')
-                        else:
-                            print()
-                            print(name)
-                    print()
-                        # break
 
             if epoch % 1 == 0:
-                print(epoch)
-                for name, param in self.model.named_parameters():
-                    if param.requires_grad:
-                        print(name, param.data)
-                        break
+                print(epoch, 'loss', los_sum)
 
                 self.evaluate()
 

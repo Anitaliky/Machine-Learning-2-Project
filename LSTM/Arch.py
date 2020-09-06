@@ -9,7 +9,7 @@ class Net(nn.Module):
 
     def __init__(self):
         super(Net, self).__init__()
-        self.lstm = nn.LSTM(len(REL_FEATURES), len(REL_FEATURES))
+        self.lstm = nn.LSTM(len(REL_FEATURES), len(REL_FEATURES), num_layers=2)
         self.hidden2temp = nn.Linear(len(REL_FEATURES), 11)
 
     def forward(self, x):
