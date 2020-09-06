@@ -38,8 +38,8 @@ LABEL = ['Temp']
 df_train = pd.read_csv('../weather_data/df_full_train.csv')
 df_test = pd.read_csv('../weather_data/df_full_test.csv')
 
-train_set = data.WeatherDataset(df_train)
-test_set = data.WeatherDataset(df_test)
+train_set = WeatherDataset(df_train)
+test_set = WeatherDataset(df_test)
 
 train_loader = torch.utils.data.DataLoader(train_set, batch_size=1, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=1)
