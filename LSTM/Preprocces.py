@@ -6,6 +6,7 @@ import torch
 from torch.utils.data.dataset import Dataset, TensorDataset
 from torch import optim
 import pandas as pd
+
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', 100)
 
@@ -34,14 +35,14 @@ class WeatherDataset(Dataset):
 # ' _conds',
 REL_FEATURES = [' _dewptm', ' _fog', ' _hail', ' _hum', ' _pressurem', ' _rain', ' _snow',
                 ' _thunder', ' _tornado', ' _vism', ' _wspdm', 'year', 'month', 'day', 'night', 'morning',
-                'noon', 'evening']
+                'noon', 'evening', 'month_cos', 'month_sin', 'hour_cos', 'hour_sin']
 LABEL = ['Temp']
 
-df_train = pd.read_csv('../weather_data/df_full_train.csv')
-df_test = pd.read_csv('../weather_data/df_full_test.csv')
+df_train = pd.read_csv('../Data Preprocessing/weather_data/df_full_train.csv')
+df_test = pd.read_csv('../Data Preprocessing/weather_data/df_full_test.csv')
 
 train_set = WeatherDataset(df_train)
 test_set = WeatherDataset(df_test)
 
-train_loader = torch.utils.data.DataLoader(train_set, batch_size=1, shuffle=False)
+train_loader = torch.utils.data.DataLoader(train_set, batch_size=1, shuffle=True)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=1)
