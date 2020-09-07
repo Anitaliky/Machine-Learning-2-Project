@@ -1,6 +1,6 @@
 import itertools
 import time
-from sklearn.metrics import precision_recall_fscore_support, accuracy_score
+from sklearn.metrics import mean_squared_error, accuracy_score
 from numpy.linalg import norm
 import numpy as np
 import pickle
@@ -19,17 +19,20 @@ class Memm:
             os.makedirs(self.model_dir)
         self.likl_func = []
         self.likl_grad = []
-        self.tag_set = [0, 1]
+        self.tag_set = list(range(11))
         self.histories = []
         self.n_total_features = 0  # Total number of features accumulated
 
-        self.cate_map = [('Day_of_Week', '01'), ('Weekend', '02'), ('Month', '03'), ('Year', '04')]
+        self.cate = [' _conds', ' _fog', ' _hail', ' _rain', ' _snow', ' _thunder', ' _tornado', 'night', 'morning',
+                     'noon', 'evening', 'year', 'month', 'week', 'day', 'hour', ' _dewptm_bars', ' _hum_bars',
+                     ' _pressurem_bars', ' _vism_bars', ' _wspdm_bars']
+        self.cate_map = [(name, str(i).rjust(2, '0')) for i, name in enumerate(self.cate)]
 
-        self.cont_map = [('Temperature(F)', '11'), ('Wind_Chill(F)', '12'), ('Humidity(%)', '13'),
-                         ('Pressure(in)', '14'), ('Visibility(mi)', '15'),
-                         ('Wind_Speed(mph)', '16'), ('Precipitation(in)', '17')]
+        self.cont = []#[' _dewptm', ' _pressurem', ' _vism', ' _wspdm',
+        #              'month_cos', 'month_sin', 'hour_cos', 'hour_sin', 'week_cos', 'week_sin']
+        self.cont_map = [(name, str(i).rjust(2, '2')) for i, name in enumerate(self.cont)]
 
-        self.features_codes = ['f100'] + ['f' + i + c[1] for c in self.cate_map + self.cont_map for i in ['1', '2']]
+        self.features_codes = ['f99'] + ['f' + i + c[1] for c in self.cate_map + self.cont_map for i in ['1', '2']]
         self.features_count = {f_name: {} for f_name in self.features_codes}
 
         self.n_dict = {}
@@ -44,7 +47,7 @@ class Memm:
         self.bars_dict = {}
         self.cols_dict = {}
 
-        self.markov = 3
+        self.markov = 2
         self.threshold = {f_name: 0 for f_name in
                           self.features_codes}  # feature count threshold - empirical count must be higher than this
         self.la = 0.1
@@ -83,58 +86,59 @@ class Memm:
         else:
             self.features_count[dictionary][key] += 1
 
-    def add2count_cont(self, df, row_i, curr_dangerous, col_name, code):
+    def add2count_cont(self, df, row_i, curr_temp, col_name, code):
         bars = self.create_bars(df, col_name)
         bar_i = self.get_bar(bars, row_i[col_name])
         self.bars_dict[col_name] = bars
-        self.add2count((bar_i, curr_dangerous), code)
+        self.add2count((bar_i, curr_temp), code)
         return bar_i
 
     def create_features(self):
         """defines and create the features, counting number of occurence of each one."""
-        df = pd.read_csv('/home/student/Desktop/ML/save.csv')
+        df = pd.read_csv('../weather_data/df_full_train.csv')#.head(1000)
         print('len', len(df))
 
-        grouped = df.groupby(['State', 'Day_Part'])
-        print('num of groups', len(grouped), '(shouldnt be more that 156)')
+        grouped = df.groupby(['year', 'week'])
+        print('num of groups', len(grouped))
         for group_id, (group, df_group) in enumerate(grouped):
             print(group_id, len(df_group), end=', ')
             df_group = self.addstars(df_group)
             for i in range(self.markov, len(df_group)):  # iterate over indices of words in sentence
                 row_i = df_group.iloc[i]
                 history_df = df_group.iloc[i - self.markov:i + 1].reset_index(drop=True)
-                curr_dangerous = df_group.loc[i, 'Dangerous']
+                curr_temp = df_group.loc[i, 'Temp']
                 self.cols_dict = dict(zip(df.columns, range(len(df))))
-                self.histories.append((history_df, curr_dangerous))  # add to histories this history and tag
+                self.histories.append((history_df, curr_temp))  # add to histories this history and tag
 
                 # categorical
                 for col_name, code in self.cate_map:
-                    self.add2count((row_i[col_name], curr_dangerous), 'f1' + code)
+                    self.add2count((row_i[col_name], curr_temp), 'f1' + code)
 
                 bars_i = {}
                 # continuous
                 for col_name, code in self.cont_map:
-                    bars_i[col_name] = self.add2count_cont(df, row_i, curr_dangerous, col_name, 'f1' + code)
+                    bars_i[col_name] = self.add2count_cont(df, row_i, curr_temp, col_name, 'f1' + code)
 
                 for j in range(self.markov):  # TODO: maybe range(1, self.markov)
-                    if history_df.loc[j, 'Dangerous'] == '*':
+                    if history_df.loc[j, 'Temp'] == '*':
                         continue
-                    self.add2count((history_df.loc[j, 'Dangerous'], j, curr_dangerous), 'f100')
+                    self.add2count((history_df.loc[j, 'Temp'], j, curr_temp), 'f100')
 
                     # categorical
                     for col_name, code in self.cate_map:
-                        self.add2count((history_df.loc[j, col_name], j, curr_dangerous), 'f2' + code)
+                        self.add2count((history_df.loc[j, col_name], j, curr_temp), 'f2' + code)
 
                     # continuous
                     for col_name, code in self.cont_map:
                         temp_bar_j = self.get_bar(self.bars_dict[col_name], history_df.loc[j, col_name])
-                        self.add2count((bars_i[col_name], temp_bar_j, j, curr_dangerous), 'f2' + code)
+                        self.add2count((bars_i[col_name], temp_bar_j, j, curr_temp), 'f2' + code)
 
         print('finished groups')
 
     def preprocess_features(self):
         """filter features that occured in train set less than threshold,
         and gives an ID for each one."""
+        prev_n = 0
         for feature_code, feature_dict in self.features_count.items():
             self.n_dict[feature_code] = self.n_total_features
             for key, count in feature_dict.items():
@@ -142,44 +146,51 @@ class Memm:
                     self.features_id_dict[feature_code][key] = self.n_dict[feature_code]
                     self.n_dict[feature_code] += 1
             self.n_total_features = self.n_dict[feature_code]
-            print(feature_code, self.n_total_features)
+            print(feature_code, self.n_total_features - prev_n)
+            prev_n = self.n_total_features
         print(self.features_id_dict)
 
-    def history2features(self, history_df, curr_dangerous):
+    def history2features(self, history_df, curr_temp):
         """return a list of features ID given a history"""
+        t0 = time.time()
         features = []
         row_i = history_df.iloc[-1]
 
         # categorical
         for col_name, code in self.cate_map:
-            key = (row_i[col_name], curr_dangerous)
+            key = (row_i[col_name], curr_temp)
             if key in self.features_id_dict['f1' + code]:
                 features.append(self.features_id_dict['f1' + code][key])
-
+        t1 = time.time()
+        # print('t1', t1-t0)
         bars_i = {}
         # continuous
         for col_name, code in self.cont_map:
             bars_i[col_name] = self.get_bar(self.bars_dict[col_name], row_i[col_name])
-            key = (bars_i[col_name], curr_dangerous)
+            key = (bars_i[col_name], curr_temp)
             if key in self.features_id_dict['f1' + code]:
                 features.append(self.features_id_dict['f1' + code][key])
+        t2 = time.time()
+        # print('t2', t2-t1)
 
         for j in range(self.markov):
-            if history_df.loc[j, 'Dangerous'] == '*':
+            if history_df.loc[j, 'Temp'] == '*':
                 continue
 
             # categorical
             for col_name, code in self.cate_map:
-                key = (history_df.loc[j, col_name], j, curr_dangerous)
+                key = (history_df.loc[j, col_name], j, curr_temp)
                 if key in self.features_id_dict['f1' + code]:
                     features.append(self.features_id_dict['f1' + code][key])
 
             # continuous
             for col_name, code in self.cont_map:
                 bar_j = self.get_bar(self.bars_dict[col_name], history_df.iloc[j][col_name])
-                key = (bars_i[col_name], bar_j, j, curr_dangerous)
+                key = (bars_i[col_name], bar_j, j, curr_temp)
                 if key in self.features_id_dict['f2' + code]:
                     features.append(self.features_id_dict['f2' + code][key])
+        t3 = time.time()
+        # print('t3', t3-t2)
 
         return features
 
@@ -192,14 +203,15 @@ class Memm:
             curr_features = self.history2features(history, cur_tag)
             self.train_features[(self.tup_of_tups(history), cur_tag)] = curr_features
             self.all_tags_features[(self.tup_of_tups(history), cur_tag)] = curr_features
-            self.all_tags_features[(self.tup_of_tups(history), 1 - cur_tag)] = self.history2features(history,
-                                                                                                     1 - cur_tag)
+            for y_ in self.tag_set:
+                if y_ == cur_tag:
+                    continue
+                self.all_tags_features[(self.tup_of_tups(history), y_)] = self.history2features(history, y_)
 
     def linear_term(self, w):
         """calculate the linear term of the likelihood function: sum for each i: w*f(x_i,y_i)"""
         linear_sum = 0
         for feature_dict in self.train_features.values():
-            # linear_sum += (w[list(feature_dict.keys())] * list(feature_dict.values())).sum()
             linear_sum += w[feature_dict].sum()
         return linear_sum
 
@@ -209,7 +221,6 @@ class Memm:
             log_sum = 0
             for y_ in self.tag_set:
                 feature_dict = self.all_tags_features[(self.tup_of_tups(history), y_)]
-                # log_sum += np.exp((w[list(feature_dict.keys())] * list(feature_dict.values())).sum())
                 log_sum += np.exp(w[feature_dict].sum())
             self.all_tags_exp[self.tup_of_tups(history)] = log_sum
             all_sum += np.log(log_sum)
@@ -226,11 +237,8 @@ class Memm:
         all_sum = np.zeros(self.n_total_features)
         for history, cur_tag in self.histories:
             deno = self.all_tags_exp[self.tup_of_tups(history)]
-            # print('deno', deno)
-            # time.sleep(3)
             for y_ in self.tag_set:
                 feature_dict = self.all_tags_features[(self.tup_of_tups(history), y_)]
-                # nom = np.exp((w[list(feature_dict.keys())] * list(feature_dict.values())).sum())
                 nom = np.exp(w[feature_dict].sum())
                 all_sum[self.all_tags_features[(self.tup_of_tups(history), y_)]] += (nom / deno)
         return all_sum
@@ -246,6 +254,8 @@ class Memm:
         print('linear_term', t1 - t0, linear_term)
         print('normalization_term', t2 - t1, normalization_term)
         likelihood = linear_term - normalization_term - 0.5 * self.la * (np.linalg.norm(w) ** 2)
+
+        self.likl_func.append(-likelihood)
         return -likelihood
 
     def f_prime(self, w):
@@ -257,16 +267,16 @@ class Memm:
 
         print('expected_counts', t3 - t2, expected_counts[-10:])
         grad = self.train_vector_sum - expected_counts - self.la * w
+
+        self.likl_grad.append(-grad)
         return -grad
 
     def minimize(self):
         """applies the minimization for the loss function"""
         self.empirical_counts()
-        w = np.random.rand(self.n_total_features) / 100 - 0.005  # initiates the weigths to small values
+        w = np.random.rand(self.n_total_features) / 100 - 0.005
         w, _, _ = scipy.optimize.fmin_l_bfgs_b(func=self.func, fprime=self.f_prime,
-                                               x0=w, maxiter=15, epsilon=10 ** (-6), iprint=1)
-        # w, _, _ = scipy.optimize.fmin_bfgs(f=self.func, fprime=self.f_prime,
-        #                                    x0=w, maxiter=15, epsilon=10 ** (-6), iprint=1)
+                                               x0=w, maxiter=10, epsilon=10 ** (-6), iprint=1)
 
         self.w = w
         print('self.w', self.w)
@@ -279,6 +289,10 @@ class Memm:
             pickle.dump(self.features_id_dict, file)
         with open(self.model_dir + 'bars.pkl', 'wb') as file:
             pickle.dump(self.bars_dict, file)
+        with open(self.model_dir + 'mini.txt', 'w') as file:
+            file.write(str(self.likl_func))
+            file.write('\n')
+            file.write(str(self.likl_grad))
 
     def train(self):
         """train the model"""
@@ -296,7 +310,7 @@ class Memm:
 
     def test(self, run_train=True):
         """test the model"""
-        test_path = 'data/train.csv'
+        test_path = '../weather_data/df_full_test.csv'
         print("Beginning test on", test_path)
 
         if not run_train:
@@ -310,55 +324,70 @@ class Memm:
         print(self.features_id_dict.keys())
         all_t_tags = []  # list of true tags for comparing on test
         all_p_tags = []  # list of predicted tags
-        df = pd.read_csv('/home/student/Desktop/ML/save1.csv')
+        df = pd.read_csv(test_path)
 
-        grouped = df.groupby('Airport_Code')
+        grouped = df.groupby(['year', 'week'])
         for group_id, (group, df_group) in enumerate(grouped):
-            print(group_id, len(df_group), end=', ')
+            print(group_id, group, len(df_group), end=', ')
             # if len(df_group) < 20:
             #     continue
-            all_t_tags.append(df_group)
-            p_tags = self.viterbi_beam(df_group)
-            print(df_group['Dangerous'])
+            all_t_tags.append(df_group['Temp'].tolist())
+            p_tags = self.viterbi_beam(df_group)[self.markov:]
+            # print(df_group['Temp'])
             all_p_tags.append(p_tags)
+            self.evaluate(all_t_tags, all_p_tags)
         self.evaluate(all_t_tags, all_p_tags)
 
     def evaluate(self, all_t_tags, all_p_tags):
         """calculates the accuracy and confusion matrix for prediction"""
-        all_p_tags = [item for sublist in all_p_tags for item in sublist]
-        all_t_tags = [item for sublist in all_t_tags for item in sublist]
-
-        results = precision_recall_fscore_support(all_t_tags, all_p_tags, average='binary')
-        results = [accuracy_score(all_t_tags, all_p_tags)] + list(results)
-        results = str(dict(zip(['accuracy', 'precision', 'recall', 'f1'], results)))
+        all_p_tags = [int(item) for sublist in all_p_tags for item in sublist]
+        all_t_tags = [int(item) for sublist in all_t_tags for item in sublist]
+        print(all_p_tags)
+        print(all_t_tags)
+        results = 'MSE = ' + str(mean_squared_error(all_t_tags, all_p_tags))
+        results += ', accuracy = ' + str(accuracy_score(all_t_tags, all_p_tags))
         print(results)
-        with open(self.model_dir + "accuracy.txt", 'w') as file:
+        with open(self.model_dir + "results.txt", 'w') as file:
             file.write(results)
         # with open(self.model_dir + "count_cm.txt", 'w') as file:
         #     file.write(count_cm)
 
     def pi_q_beam(self, pi, history_df, k, t, x):
         """calculate pi"""
+        t0 = time.time()
         if (k - 1, (t,) + x[:-1]) not in pi:
             return -1
-        history_df['Dangerous'] = [t, ] + list(x)
+        history_df['Temp'] = [t, ] + list(x)
         feature_dict = self.history2features(history_df, x[-1])
+        t1 = time.time()
+        # print('t1', t1-t0)
         nome = np.exp(self.w[feature_dict].sum())
-        feature_dict = self.history2features(history_df, 1 - x[-1])
-        deno = np.exp(self.w[feature_dict].sum()) + nome
-
+        t2 = time.time()
+        # print('t2', t2 - t1)
+        deno = nome
+        for y_ in self.tag_set:
+            if y_ == x[-1]:
+                continue
+            feature_dict = self.history2features(history_df, y_)
+            deno += np.exp(self.w[feature_dict].sum())
+            t3 = time.time()
+            # print('t3', t3 - t2)
+        t4 = time.time()
+        # print('t4', t4 - t3)
         return pi[(k - 1, (t,) + x[:-1])] * nome / deno
 
     def viterbi_beam(self, df_group):
         """perform viterbi"""
         print('len', len(df_group))
         df_group = self.addstars(df_group)
-
         pi = {}
         bp = {}
         pi[self.markov - 1, ('*',) * self.markov] = 1
+        t = time.time()
         for k in range(self.markov, len(df_group)):
-            print(k, end=', ')
+            t_1 = time.time()
+            print(k, t_1 - t)
+            t = t_1
             history_df = df_group.iloc[k - self.markov:k + 1].reset_index(drop=True)
             b_best_pi = {}
             pi_k = {}
@@ -389,6 +418,12 @@ class Memm:
             t = [bp[(k, tuple(t[:self.markov]))]] + t
         print(t)
         return t
+
+    @staticmethod
+    def get_pi_beam(pi, k, x):
+        if (k, x) not in pi:
+            return -1
+        return pi[(k, x)]
 
 
 if __name__ == '__main__':
