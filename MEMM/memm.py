@@ -289,10 +289,11 @@ class Memm:
             pickle.dump(self.features_id_dict, file)
         with open(self.model_dir + 'bars.pkl', 'wb') as file:
             pickle.dump(self.bars_dict, file)
-        with open(self.model_dir + 'mini.txt', 'w') as file:
+        with open(self.model_dir + 'mini.txt', 'a') as file:
+            file.write('\n\n')
             file.write(str(self.likl_func))
             file.write('\n')
-            file.write(str(self.likl_grad))
+            file.write(str(np.norm(self.likl_grad)))
 
     def train(self):
         """train the model"""
@@ -348,6 +349,7 @@ class Memm:
         results += ', accuracy = ' + str(accuracy_score(all_t_tags, all_p_tags))
         print(results)
         with open(self.model_dir + "results.txt", 'w') as file:
+            file.write('\n')
             file.write(results)
         # with open(self.model_dir + "count_cm.txt", 'w') as file:
         #     file.write(count_cm)
@@ -436,7 +438,7 @@ if __name__ == '__main__':
     #     print("invalid input. please enter 'y' or 'n'")
 
     run_train = True
-    # run_train = False
+    run_train = False
 
     model = Memm()
     if run_train:
