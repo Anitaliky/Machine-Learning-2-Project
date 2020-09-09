@@ -15,9 +15,9 @@ class Memm:
 
     def __init__(self, model_name):
         self.model_name = model_name
-        self.model_dir = '/home/student/Desktop/ML/MEMM/saves/{}'.format(self.model_name)
         self.train_path = '/home/student/Desktop/ML/weather_data/df_{}_train.csv'.format(self.model_name)
         self.test_path = '/home/student/Desktop/ML/weather_data/df_{}_test.csv'.format(self.model_name)
+        self.model_dir = '/home/student/Desktop/ML/MEMM/saves/{}'.format(self.model_name)
 
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
@@ -99,12 +99,11 @@ class Memm:
         """defines and create the features, counting number of occurence of each one."""
         df = pd.read_csv(self.train_path).head(1000)
         self.col_map = {name: i for i, name in enumerate(df.columns)}
-        print('len', len(df))
 
         grouped = df.groupby(['year', 'week'])
-        print('num of groups', len(grouped))
+        print('train len', len(grouped))
         for group_id, (group, df_group) in enumerate(grouped):
-            print(group_id, len(df_group), end=', ')
+            # print(group_id, len(df_group), end=', ')
             df_group = self.add_stars(df_group)
             for i in range(self.markov, len(df_group)):  # iterate over indices of words in sentence
                 row_i = df_group.iloc[i].tolist()
@@ -136,8 +135,6 @@ class Memm:
                         temp_bar_j = self.get_bar(self.bars_dict[col_name], row_j[self.col_map[col_name]])
                         self.add2count((bars_i[col_name], temp_bar_j, j, curr_temp), 'f2' + code)
 
-        print('finished groups')
-
     def preprocess_features(self):
         """filter features that occured in train set less than threshold,
         and gives an ID for each one."""
@@ -149,13 +146,11 @@ class Memm:
                     self.features_id_dict[feature_code][key] = self.n_dict[feature_code]
                     self.n_dict[feature_code] += 1
             self.n_total_features = self.n_dict[feature_code]
-            print(feature_code, self.n_total_features - prev_n)
+            # print(feature_code, self.n_total_features - prev_n, end=', ')
             prev_n = self.n_total_features
-        print(self.features_id_dict)
 
     def history2features(self, history_list, curr_temp):
         """return a list of features ID given a history"""
-        t0 = time.time()
         features = []
         row_i = history_list[-1]
 
@@ -164,8 +159,6 @@ class Memm:
             key = (row_i[self.col_map[col_name]], curr_temp)
             if key in self.features_id_dict['f1' + code]:
                 features.append(self.features_id_dict['f1' + code][key])
-        t1 = time.time()
-        # print('t1', t1-t0)
         bars_i = {}
         # continuous
         for col_name, code in self.cont_map:
@@ -173,8 +166,6 @@ class Memm:
             key = (bars_i[col_name], curr_temp)
             if key in self.features_id_dict['f1' + code]:
                 features.append(self.features_id_dict['f1' + code][key])
-        t2 = time.time()
-        # print('t2', t2-t1)
 
         for j in range(self.markov):
             row_j = history_list[j]
@@ -193,16 +184,14 @@ class Memm:
                 key = (bars_i[col_name], bar_j, j, curr_temp)
                 if key in self.features_id_dict['f2' + code]:
                     features.append(self.features_id_dict['f2' + code][key])
-        t3 = time.time()
-        # print('t3', t3-t2)
 
         return features
 
     def extract_features(self):
         i = 0
         for history, cur_tag in self.histories:
-            if i % 500 == 0:
-                print(i, end=', ')
+            # if i % 500 == 0:
+            #     print(i, end=', ')
             i += 1
             curr_features = self.history2features(history, cur_tag)
             self.train_features[(self.tup_of_tups(history), cur_tag)] = curr_features
@@ -247,15 +236,15 @@ class Memm:
         return all_sum
 
     def func(self, w):
-        print('function run', w.sum())
+        # print('function run', w.sum())
         t0 = time.time()
         linear_term = self.linear_term(w)
         t1 = time.time()
         normalization_term = self.normalization_term(w)
         t2 = time.time()
 
-        print('linear_term', t1 - t0, linear_term)
-        print('normalization_term', t2 - t1, normalization_term)
+        # print('linear_term', t1 - t0, linear_term)
+        # print('normalization_term', t2 - t1, normalization_term)
         likelihood = linear_term - normalization_term - 0.5 * self.la * (np.linalg.norm(w) ** 2)
 
         self.likl_func.append(-likelihood)
@@ -263,12 +252,12 @@ class Memm:
 
     def f_prime(self, w):
         """calculates the likelihood function and its gradient."""
-        print('gradient run', w.sum())
+        # print('gradient run', w.sum())
         t2 = time.time()
         expected_counts = self.expected_counts(w)
         t3 = time.time()
 
-        print('expected_counts', t3 - t2, expected_counts[-10:])
+        # print('expected_counts', t3 - t2, expected_counts[-10:])
         grad = self.train_vector_sum - expected_counts - self.la * w
 
         self.likl_grad.append(np.linalg.norm(-grad))
@@ -279,83 +268,88 @@ class Memm:
         self.empirical_counts()
         w = np.random.rand(self.n_total_features) / 100 - 0.005
         w, _, _ = scipy.optimize.fmin_l_bfgs_b(func=self.func, fprime=self.f_prime,
-                                               x0=w, maxiter=3, epsilon=10 ** (-6), iprint=1)
+                                               x0=w, maxiter=100, epsilon=10 ** (-6), iprint=0)
 
         self.w = w
-        print('self.w', self.w)
+        # print('self.w', self.w)
 
     def train(self):
         """train the model"""
         print('Beginning train...')
 
         self.create_features()
-        print('created features')
+        # print('created features')
         self.preprocess_features()
-        print('preprocessed features')
+        # print('preprocessed features')
         self.extract_features()
-        print('extracted features')
+        # print('extracted features')
         self.minimize()
-        print('minimized features')
+        # print('minimized features')
         self.save_model()
 
     def save_model(self):
         """saves the train result to be able to test using them"""
-        with open(self.model_dir + 'weights.pkl', 'wb') as file:
+        with open(os.path.join(self.model_dir, 'weights.pkl'), 'wb') as file:
             pickle.dump(self.w, file)
-        with open(self.model_dir + 'features_id_dict.pkl', 'wb') as file:
+        with open(os.path.join(self.model_dir, 'features_id_dict.pkl'), 'wb') as file:
             pickle.dump(self.features_id_dict, file)
-        with open(self.model_dir + 'bars.pkl', 'wb') as file:
+        with open(os.path.join(self.model_dir, 'bars.pkl'), 'wb') as file:
             pickle.dump(self.bars_dict, file)
-        with open(self.model_dir + 'mini.txt', 'w') as file:
-            file.write('\n\n' + str(self.likl_func) + '\n' + str(self.likl_grad))
+
+        with open(os.path.join(self.model_dir, 'mini.txt'), 'w') as file:
+            file.write(str(self.likl_func) + '\n' + str(self.likl_grad))
 
     def load_model(self):
-        with open(self.model_dir + 'weights.pkl', 'rb') as file:
+        with open(os.path.join(self.model_dir, 'weights.pkl'), 'rb') as file:
             self.w = pickle.load(file)
-        with open(self.model_dir + 'features_id_dict.pkl', 'rb') as file:
+        with open(os.path.join(self.model_dir, 'features_id_dict.pkl'), 'rb') as file:
             self.features_id_dict = pickle.load(file)
-        with open(self.model_dir + 'bars.pkl', 'rb') as file:
+        with open(os.path.join(self.model_dir, 'bars.pkl'), 'rb') as file:
             self.bars_dict = pickle.load(file)
 
-    def test(self):
+    def test(self, on='test'):
         self.load_model()
 
-        print("Beginning test on", self.test_path)
+        print(f"Beginning test on {on}...")
+
+        with open(os.path.join(self.model_dir, f"results_{on}.txt"), 'w') as file:
+            file.write('')
 
         all_t_tags, all_p_tags = [], []
-        df = pd.read_csv(self.test_path)
+        if on == 'test':
+            df = pd.read_csv(self.test_path)
+        elif on == 'train':
+            df = pd.read_csv(self.train_path)
+
         self.col_map = {name: i for i, name in enumerate(df.columns)}
 
         grouped = df.groupby(['year', 'week'])
+        print('test len', len(grouped))
         for group_id, (group, df_group) in enumerate(grouped):
             print(group_id, group, len(df_group), end=', ')
 
-            all_t_tags.append(df_group['Temp'].tolist())
-            all_p_tags.append(self.viterbi_beam(df_group)[self.markov:])
-            print(all_p_tags[-1])
-            print(all_t_tags[-1])
-            self.evaluate(all_t_tags, all_p_tags)
-            break
-        self.evaluate(all_t_tags, all_p_tags)
+            all_t_tags += df_group['Temp'].tolist()
+            all_p_tags += self.viterbi_beam(df_group)[self.markov:]
+            # print(all_p_tags[-1])
+            # print(all_t_tags[-1])
+            self.evaluate(all_t_tags, all_p_tags, on)
 
-    def evaluate(self, all_t_tags, all_p_tags):
+        self.evaluate(all_t_tags, all_p_tags, on)
+
+    def evaluate(self, all_t_tags, all_p_tags, on):
         """calculates the accuracy and confusion matrix for prediction"""
-        all_p_tags = [int(item) for sublist in all_p_tags for item in sublist]
-        all_t_tags = [int(item) for sublist in all_t_tags for item in sublist]
-        print(all_p_tags)
-        print(all_t_tags)
-        results = 'MSE = ' + str(mean_squared_error(all_t_tags, all_p_tags))
-        results += ', accuracy = ' + str(accuracy_score(all_t_tags, all_p_tags))
+        # all_p_tags = [int(item) for sublist in all_p_tags for item in sublist]
+        # all_t_tags = [int(item) for sublist in all_t_tags for item in sublist]
+
+        results = 'MSE: ' + str(mean_squared_error(all_t_tags, all_p_tags))
+        results += ' accuracy: ' + str(accuracy_score(all_t_tags, all_p_tags))
         print(results)
-        with open(self.model_dir + "results.txt", 'w') as file:
-            file.write('\n')
+        with open(os.path.join(self.model_dir, f"results_{on}.txt"), 'a') as file:
             file.write(results)
-        # with open(self.model_dir + "count_cm.txt", 'w') as file:
-        #     file.write(count_cm)
+            file.write('\n')
 
     def pi_q_beam(self, pi, history_list, k, t, x):
         """calculate pi"""
-        t0 = time.time()
         if (k - 1, (t,) + x[:-1]) not in pi:
             return -1
 
@@ -364,21 +358,13 @@ class Memm:
             row[self.col_map['Temp']] = x[i]
 
         feature_dict = self.history2features(history_list, x[-1])
-        t1 = time.time()
-        # print('t1', t1-t0)
         nome = np.exp(self.w[feature_dict].sum())
-        t2 = time.time()
-        # print('t2', t2 - t1)
         deno = nome
         for y_ in self.tag_set:
             if y_ == x[-1]:
                 continue
             feature_dict = self.history2features(history_list, y_)
             deno += np.exp(self.w[feature_dict].sum())
-            t3 = time.time()
-            # print('t3', t3 - t2)
-        t4 = time.time()
-        # print('t4', t4 - t3)
         return pi[(k - 1, (t,) + x[:-1])] * nome / deno
 
     def viterbi_beam(self, df_group):
@@ -435,15 +421,17 @@ if __name__ == '__main__':
     #     print("invalid input. please enter 'y' or 'n'")
 
     run_train = True
-    # run_train = False
+    run_train = False
     for freq_range in [[str(i) for i in range(1, 13)],  # month
                        ['autumn', 'winter', 'spring', 'monsoon', 'summer'],  # season
                        ['full']]:  # full year
         #               all day
         for freq_part in freq_range:
             for day_part in ['all', 'night', 'morning', 'noon', 'evening']:
+                print()
                 print('_'.join([freq_part, day_part]))
-                model = Memm(model_name='_'.join([freq_part, day_part]))
-                if run_train:
-                    model.train()
-                model.test()
+                # model = Memm(model_name='_'.join([freq_part, day_part]))
+                # if run_train:
+                #     model.train()
+                # model.test(on='test')
+                # model.test(on='train')
