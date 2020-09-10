@@ -13,12 +13,8 @@ pd.set_option('display.max_columns', None)
 
 class Memm:
 
-    def __init__(self, model_name):
-        self.model_name = model_name
-        self.train_path = '/home/student/Desktop/ML/weather_data/df_{}_train.csv'.format(self.model_name)
-        self.test_path = '/home/student/Desktop/ML/weather_data/df_{}_test.csv'.format(self.model_name)
-        self.model_dir = '/home/student/Desktop/ML/MEMM/saves/{}'.format(self.model_name)
-
+    def __init__(self):
+        self.model_dir = '/home/student/Desktop/ML/MEMM/saves/'.format()
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
         self.likl_func = []
@@ -32,13 +28,12 @@ class Memm:
                      ' _pressurem_bars', ' _vism_bars', ' _wspdm_bars']
         self.cate_map = [(name, str(i).rjust(2, '0')) for i, name in enumerate(self.cate)]
 
-        self.cont = []  # [' _dewptm', ' _pressurem', ' _vism', ' _wspdm',
+        self.cont = []#[' _dewptm', ' _pressurem', ' _vism', ' _wspdm',
         #              'month_cos', 'month_sin', 'hour_cos', 'hour_sin', 'week_cos', 'week_sin']
         self.cont_map = [(name, str(i).rjust(2, '2')) for i, name in enumerate(self.cont)]
 
         self.features_codes = ['f99'] + ['f' + i + c[1] for c in self.cate_map + self.cont_map for i in ['1', '2']]
         self.features_count = {f_name: {} for f_name in self.features_codes}
-        self.col_map = {}
 
         self.n_dict = {}
         self.features_id_dict = {f_name: {} for f_name in self.features_codes}  # OrderedDict
@@ -60,8 +55,8 @@ class Memm:
         self.hyper_str = str(self.threshold) + '_' + str(self.la)
 
     @staticmethod
-    def tup_of_tups(history_list):
-        return tuple(tuple(x) for x in history_list)
+    def tup_of_tups(df):
+        return tuple(df.itertuples(index=False, name=None))
 
     @staticmethod
     def create_bars(df, col_name):
@@ -77,9 +72,12 @@ class Memm:
             i += 1
         return i
 
-    def add_stars(self, df):
-        df_star = pd.DataFrame([['*'] * len(df.columns)] * self.markov, columns=df.columns)
-        return pd.concat([df_star, df]).reset_index(drop=True)
+    def addstars(self, df_group):
+        for i in range(self.markov):
+            df_group.loc[-i] = ['*'] * len(df_group.columns)  # adding a row
+        df_group.index = df_group.index + self.markov  # shifting index
+        df_group = df_group.sort_index().reset_index(drop=True)
+        return df_group
 
     def add2count(self, key, dictionary):
         """"add 1 to the key in the dictionary (or create the key with value 1)."""
@@ -90,30 +88,31 @@ class Memm:
 
     def add2count_cont(self, df, row_i, curr_temp, col_name, code):
         bars = self.create_bars(df, col_name)
-        bar_i = self.get_bar(bars, row_i[self.col_map[col_name]])
+        bar_i = self.get_bar(bars, row_i[col_name])
         self.bars_dict[col_name] = bars
         self.add2count((bar_i, curr_temp), code)
         return bar_i
 
     def create_features(self):
         """defines and create the features, counting number of occurence of each one."""
-        df = pd.read_csv(self.train_path).head(1000)
-        self.col_map = {name: i for i, name in enumerate(df.columns)}
+        df = pd.read_csv('../weather_data/df_full_train.csv')#.head(1000)
+        print('len', len(df))
 
         grouped = df.groupby(['year', 'week'])
-        print('train len', len(grouped))
+        print('num of groups', len(grouped))
         for group_id, (group, df_group) in enumerate(grouped):
-            # print(group_id, len(df_group), end=', ')
-            df_group = self.add_stars(df_group)
+            print(group_id, len(df_group), end=', ')
+            df_group = self.addstars(df_group)
             for i in range(self.markov, len(df_group)):  # iterate over indices of words in sentence
-                row_i = df_group.iloc[i].tolist()
-                history_list = df_group.values.tolist()[i - self.markov:i + 1]
-                curr_temp = row_i[self.col_map['Temp']]
-                self.histories.append((history_list, curr_temp))  # add to histories this history and tag
+                row_i = df_group.iloc[i]
+                history_df = df_group.iloc[i - self.markov:i + 1].reset_index(drop=True)
+                curr_temp = df_group.loc[i, 'Temp']
+                self.cols_dict = dict(zip(df.columns, range(len(df))))
+                self.histories.append((history_df, curr_temp))  # add to histories this history and tag
 
                 # categorical
                 for col_name, code in self.cate_map:
-                    self.add2count((row_i[self.col_map[col_name]], curr_temp), 'f1' + code)
+                    self.add2count((row_i[col_name], curr_temp), 'f1' + code)
 
                 bars_i = {}
                 # continuous
@@ -121,19 +120,20 @@ class Memm:
                     bars_i[col_name] = self.add2count_cont(df, row_i, curr_temp, col_name, 'f1' + code)
 
                 for j in range(self.markov):  # TODO: maybe range(1, self.markov)
-                    row_j = history_list[j]
-                    if row_j[self.col_map['Temp']] == '*':
+                    if history_df.loc[j, 'Temp'] == '*':
                         continue
-                    self.add2count((row_j[self.col_map['Temp']], j, curr_temp), 'f100')
+                    self.add2count((history_df.loc[j, 'Temp'], j, curr_temp), 'f100')
 
                     # categorical
                     for col_name, code in self.cate_map:
-                        self.add2count((row_j[self.col_map[col_name]], j, curr_temp), 'f2' + code)
+                        self.add2count((history_df.loc[j, col_name], j, curr_temp), 'f2' + code)
 
                     # continuous
                     for col_name, code in self.cont_map:
-                        temp_bar_j = self.get_bar(self.bars_dict[col_name], row_j[self.col_map[col_name]])
+                        temp_bar_j = self.get_bar(self.bars_dict[col_name], history_df.loc[j, col_name])
                         self.add2count((bars_i[col_name], temp_bar_j, j, curr_temp), 'f2' + code)
+
+        print('finished groups')
 
     def preprocess_features(self):
         """filter features that occured in train set less than threshold,
@@ -146,52 +146,59 @@ class Memm:
                     self.features_id_dict[feature_code][key] = self.n_dict[feature_code]
                     self.n_dict[feature_code] += 1
             self.n_total_features = self.n_dict[feature_code]
-            # print(feature_code, self.n_total_features - prev_n, end=', ')
+            print(feature_code, self.n_total_features - prev_n)
             prev_n = self.n_total_features
+        print(self.features_id_dict)
 
-    def history2features(self, history_list, curr_temp):
+    def history2features(self, history_df, curr_temp):
         """return a list of features ID given a history"""
+        t0 = time.time()
         features = []
-        row_i = history_list[-1]
+        row_i = history_df.iloc[-1]
 
         # categorical
         for col_name, code in self.cate_map:
-            key = (row_i[self.col_map[col_name]], curr_temp)
+            key = (row_i[col_name], curr_temp)
             if key in self.features_id_dict['f1' + code]:
                 features.append(self.features_id_dict['f1' + code][key])
+        t1 = time.time()
+        # print('t1', t1-t0)
         bars_i = {}
         # continuous
         for col_name, code in self.cont_map:
-            bars_i[col_name] = self.get_bar(self.bars_dict[col_name], row_i[self.col_map[col_name]])
+            bars_i[col_name] = self.get_bar(self.bars_dict[col_name], row_i[col_name])
             key = (bars_i[col_name], curr_temp)
             if key in self.features_id_dict['f1' + code]:
                 features.append(self.features_id_dict['f1' + code][key])
+        t2 = time.time()
+        # print('t2', t2-t1)
 
         for j in range(self.markov):
-            row_j = history_list[j]
-            if row_j[self.col_map['Temp']] == '*':
+            if history_df.loc[j, 'Temp'] == '*':
                 continue
 
             # categorical
             for col_name, code in self.cate_map:
-                key = (row_j[self.col_map[col_name]], j, curr_temp)
+                key = (history_df.loc[j, col_name], j, curr_temp)
                 if key in self.features_id_dict['f1' + code]:
                     features.append(self.features_id_dict['f1' + code][key])
 
             # continuous
             for col_name, code in self.cont_map:
-                bar_j = self.get_bar(self.bars_dict[col_name], row_j[self.col_map[col_name]])
+                bar_j = self.get_bar(self.bars_dict[col_name], history_df.iloc[j][col_name])
                 key = (bars_i[col_name], bar_j, j, curr_temp)
                 if key in self.features_id_dict['f2' + code]:
                     features.append(self.features_id_dict['f2' + code][key])
+        t3 = time.time()
+        # print('t3', t3-t2)
 
         return features
 
     def extract_features(self):
         i = 0
         for history, cur_tag in self.histories:
-            # if i % 500 == 0:
-            #     print(i, end=', ')
+            if i % 500 == 0:
+                print(i, end=', ')
             i += 1
             curr_features = self.history2features(history, cur_tag)
             self.train_features[(self.tup_of_tups(history), cur_tag)] = curr_features
@@ -222,6 +229,7 @@ class Memm:
     def empirical_counts(self):
         self.train_vector_sum = np.zeros(self.n_total_features)
         for feature_dict in self.train_features.values():
+            # self.train_vector_sum[list(feature_dict.keys())] += list(feature_dict.values())
             self.train_vector_sum[feature_dict] += 1
 
     def expected_counts(self, w):
@@ -236,15 +244,15 @@ class Memm:
         return all_sum
 
     def func(self, w):
-        # print('function run', w.sum())
+        print('function run', w.sum())
         t0 = time.time()
         linear_term = self.linear_term(w)
         t1 = time.time()
         normalization_term = self.normalization_term(w)
         t2 = time.time()
 
-        # print('linear_term', t1 - t0, linear_term)
-        # print('normalization_term', t2 - t1, normalization_term)
+        print('linear_term', t1 - t0, linear_term)
+        print('normalization_term', t2 - t1, normalization_term)
         likelihood = linear_term - normalization_term - 0.5 * self.la * (np.linalg.norm(w) ** 2)
 
         self.likl_func.append(-likelihood)
@@ -252,15 +260,15 @@ class Memm:
 
     def f_prime(self, w):
         """calculates the likelihood function and its gradient."""
-        # print('gradient run', w.sum())
+        print('gradient run', w.sum())
         t2 = time.time()
         expected_counts = self.expected_counts(w)
         t3 = time.time()
 
-        # print('expected_counts', t3 - t2, expected_counts[-10:])
+        print('expected_counts', t3 - t2, expected_counts[-10:])
         grad = self.train_vector_sum - expected_counts - self.la * w
 
-        self.likl_grad.append(np.linalg.norm(-grad))
+        self.likl_grad.append(-grad)
         return -grad
 
     def minimize(self):
@@ -268,113 +276,121 @@ class Memm:
         self.empirical_counts()
         w = np.random.rand(self.n_total_features) / 100 - 0.005
         w, _, _ = scipy.optimize.fmin_l_bfgs_b(func=self.func, fprime=self.f_prime,
-                                               x0=w, maxiter=100, epsilon=10 ** (-6), iprint=0)
+                                               x0=w, maxiter=10, epsilon=10 ** (-6), iprint=1)
 
         self.w = w
-        # print('self.w', self.w)
+        print('self.w', self.w)
+
+    def save_model(self):
+        """saves the train result to be able to test using them"""
+        with open(self.model_dir + 'weights.pkl', 'wb') as file:
+            pickle.dump(self.w, file)
+        with open(self.model_dir + 'features_id_dict.pkl', 'wb') as file:
+            pickle.dump(self.features_id_dict, file)
+        with open(self.model_dir + 'bars.pkl', 'wb') as file:
+            pickle.dump(self.bars_dict, file)
+        with open(self.model_dir + 'mini.txt', 'a') as file:
+            file.write('\n\n')
+            file.write(str(self.likl_func))
+            file.write('\n')
+            file.write(str(np.norm(self.likl_grad)))
 
     def train(self):
         """train the model"""
         print('Beginning train...')
 
         self.create_features()
-        # print('created features')
+        print('created features')
         self.preprocess_features()
-        # print('preprocessed features')
+        print('preprocessed features')
         self.extract_features()
-        # print('extracted features')
+        print('extracted features')
         self.minimize()
-        # print('minimized features')
+        print('minimized features')
         self.save_model()
 
-    def save_model(self):
-        """saves the train result to be able to test using them"""
-        with open(os.path.join(self.model_dir, 'weights.pkl'), 'wb') as file:
-            pickle.dump(self.w, file)
-        with open(os.path.join(self.model_dir, 'features_id_dict.pkl'), 'wb') as file:
-            pickle.dump(self.features_id_dict, file)
-        with open(os.path.join(self.model_dir, 'bars.pkl'), 'wb') as file:
-            pickle.dump(self.bars_dict, file)
+    def test(self, run_train=True):
+        """test the model"""
+        test_path = '../weather_data/df_full_test.csv'
+        print("Beginning test on", test_path)
 
-        with open(os.path.join(self.model_dir, 'mini.txt'), 'w') as file:
-            file.write(str(self.likl_func) + '\n' + str(self.likl_grad))
+        if not run_train:
+            with open(self.model_dir + 'weights.pkl', 'rb') as file:
+                self.w = pickle.load(file)
+            with open(self.model_dir + 'features_id_dict.pkl', 'rb') as file:
+                self.features_id_dict = pickle.load(file)
+            with open(self.model_dir + 'bars.pkl', 'rb') as file:
+                self.bars_dict = pickle.load(file)
 
-    def load_model(self):
-        with open(os.path.join(self.model_dir, 'weights.pkl'), 'rb') as file:
-            self.w = pickle.load(file)
-        with open(os.path.join(self.model_dir, 'features_id_dict.pkl'), 'rb') as file:
-            self.features_id_dict = pickle.load(file)
-        with open(os.path.join(self.model_dir, 'bars.pkl'), 'rb') as file:
-            self.bars_dict = pickle.load(file)
-
-    def test(self, on='test'):
-        self.load_model()
-
-        print(f"Beginning test on {on}...")
-
-        with open(os.path.join(self.model_dir, f"results_{on}.txt"), 'w') as file:
-            file.write('')
-
-        all_t_tags, all_p_tags = [], []
-        if on == 'test':
-            df = pd.read_csv(self.test_path)
-        elif on == 'train':
-            df = pd.read_csv(self.train_path)
-
-        self.col_map = {name: i for i, name in enumerate(df.columns)}
+        print(self.features_id_dict.keys())
+        all_t_tags = []  # list of true tags for comparing on test
+        all_p_tags = []  # list of predicted tags
+        df = pd.read_csv(test_path)
 
         grouped = df.groupby(['year', 'week'])
-        print('test len', len(grouped))
         for group_id, (group, df_group) in enumerate(grouped):
             print(group_id, group, len(df_group), end=', ')
+            # if len(df_group) < 20:
+            #     continue
+            all_t_tags.append(df_group['Temp'].tolist())
+            p_tags = self.viterbi_beam(df_group)[self.markov:]
+            # print(df_group['Temp'])
+            all_p_tags.append(p_tags)
+            self.evaluate(all_t_tags, all_p_tags)
+        self.evaluate(all_t_tags, all_p_tags)
 
-            all_t_tags += df_group['Temp'].tolist()
-            all_p_tags += self.viterbi_beam(df_group)[self.markov:]
-            # print(all_p_tags[-1])
-            # print(all_t_tags[-1])
-            self.evaluate(all_t_tags, all_p_tags, on)
-
-        self.evaluate(all_t_tags, all_p_tags, on)
-
-    def evaluate(self, all_t_tags, all_p_tags, on):
+    def evaluate(self, all_t_tags, all_p_tags):
         """calculates the accuracy and confusion matrix for prediction"""
-        # all_p_tags = [int(item) for sublist in all_p_tags for item in sublist]
-        # all_t_tags = [int(item) for sublist in all_t_tags for item in sublist]
-
-        results = 'MSE: ' + str(mean_squared_error(all_t_tags, all_p_tags))
-        results += ' accuracy: ' + str(accuracy_score(all_t_tags, all_p_tags))
+        all_p_tags = [int(item) for sublist in all_p_tags for item in sublist]
+        all_t_tags = [int(item) for sublist in all_t_tags for item in sublist]
+        print(all_p_tags)
+        print(all_t_tags)
+        results = 'MSE = ' + str(mean_squared_error(all_t_tags, all_p_tags))
+        results += ', accuracy = ' + str(accuracy_score(all_t_tags, all_p_tags))
         print(results)
-        with open(os.path.join(self.model_dir, f"results_{on}.txt"), 'a') as file:
-            file.write(results)
+        with open(self.model_dir + "results.txt", 'w') as file:
             file.write('\n')
+            file.write(results)
+        # with open(self.model_dir + "count_cm.txt", 'w') as file:
+        #     file.write(count_cm)
 
-    def pi_q_beam(self, pi, history_list, k, t, x):
+    def pi_q_beam(self, pi, history_df, k, t, x):
         """calculate pi"""
+        t0 = time.time()
         if (k - 1, (t,) + x[:-1]) not in pi:
             return -1
-
-        history_list[0][self.col_map['Temp']] = t
-        for i, row in enumerate(history_list[1:]):
-            row[self.col_map['Temp']] = x[i]
-
-        feature_dict = self.history2features(history_list, x[-1])
+        history_df['Temp'] = [t, ] + list(x)
+        feature_dict = self.history2features(history_df, x[-1])
+        t1 = time.time()
+        # print('t1', t1-t0)
         nome = np.exp(self.w[feature_dict].sum())
+        t2 = time.time()
+        # print('t2', t2 - t1)
         deno = nome
         for y_ in self.tag_set:
             if y_ == x[-1]:
                 continue
-            feature_dict = self.history2features(history_list, y_)
+            feature_dict = self.history2features(history_df, y_)
             deno += np.exp(self.w[feature_dict].sum())
+            t3 = time.time()
+            # print('t3', t3 - t2)
+        t4 = time.time()
+        # print('t4', t4 - t3)
         return pi[(k - 1, (t,) + x[:-1])] * nome / deno
 
     def viterbi_beam(self, df_group):
         """perform viterbi"""
-        df_group = self.add_stars(df_group).values.tolist()
+        print('len', len(df_group))
+        df_group = self.addstars(df_group)
         pi = {}
         bp = {}
         pi[self.markov - 1, ('*',) * self.markov] = 1
+        t = time.time()
         for k in range(self.markov, len(df_group)):
-            history_list = df_group[k - self.markov:k + 1]
+            t_1 = time.time()
+            print(k, t_1 - t)
+            t = t_1
+            history_df = df_group.iloc[k - self.markov:k + 1].reset_index(drop=True)
             b_best_pi = {}
             pi_k = {}
             bp_k = {}
@@ -385,8 +401,8 @@ class Memm:
                 ss = [self.tag_set] * (self.markov + 1)
 
             for x in itertools.product(*ss[1:]):
-                bp_k[(k, x)] = max(ss[0], key=lambda t: self.pi_q_beam(pi, history_list, k, t, x))
-                pi_k[(k, x)] = pi_calc = self.pi_q_beam(pi, history_list, k, bp_k[(k, x)], x)
+                bp_k[(k, x)] = max(ss[0], key=lambda t: self.pi_q_beam(pi, history_df, k, t, x))
+                pi_k[(k, x)] = pi_calc = self.pi_q_beam(pi, history_df, k, bp_k[(k, x)], x)
 
                 if len(b_best_pi) < self.B:
                     b_best_pi[x] = pi_calc
@@ -402,6 +418,7 @@ class Memm:
                      key=lambda x: self.get_pi_beam(pi, len(df_group) - 1, x)))
         for k in reversed(range(self.markov, len(df_group))):
             t = [bp[(k, tuple(t[:self.markov]))]] + t
+        print(t)
         return t
 
     @staticmethod
@@ -422,16 +439,8 @@ if __name__ == '__main__':
 
     run_train = True
     run_train = False
-    for freq_range in [[str(i) for i in range(1, 13)],  # month
-                       ['autumn', 'winter', 'spring', 'monsoon', 'summer'],  # season
-                       ['full']]:  # full year
-        #               all day
-        for freq_part in freq_range:
-            for day_part in ['all', 'night', 'morning', 'noon', 'evening']:
-                print()
-                print('_'.join([freq_part, day_part]))
-                # model = Memm(model_name='_'.join([freq_part, day_part]))
-                # if run_train:
-                #     model.train()
-                # model.test(on='test')
-                # model.test(on='train')
+
+    model = Memm()
+    if run_train:
+        model.train()
+    model.test(run_train=run_train)
