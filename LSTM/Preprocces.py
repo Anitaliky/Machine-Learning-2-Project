@@ -26,26 +26,26 @@ class WeatherDataset(Dataset):
         return X, y
 
     def convert_sentences_to_dataset(self):
-        for yw, df_yw in self.df.groupby(['year', 'week']):
+        for yw, df_yw in self.df.groupby(['sequence']):
             data_ten = torch.tensor(df_yw[REL_FEATURES].values.astype('float32'), requires_grad=False)
-            label_ten = torch.tensor(df_yw[LABEL].values.astype('long'), requires_grad=False)
+            label_ten = torch.tensor(df_yw[LABEL].values.astype('float32'), requires_grad=False)
             self.dataset.append((data_ten, label_ten))
 
 
 # ' _conds', embbeding?
 # 'year', 'month', 'day'
 REL_FEATURES = [' _dewptm', ' _fog', ' _hail', ' _hum', ' _pressurem', ' _rain', ' _snow',
-                ' _thunder', ' _tornado', ' _vism', ' _wspdm', 'night', 'morning',
+                ' _thunder', ' _tornado', ' _vism', ' _wspdm', 'night', 'morning', 'year', 'month', 'day',
                 'noon', 'evening', 'month_cos', 'month_sin', 'hour_cos', 'hour_sin', 'week_cos', 'week_sin']
 LABEL = ['Temp']
 
-df_train = pd.read_csv('../weather_data/df_full_train.csv')
-df_test = pd.read_csv('../weather_data/df_full_test.csv')
-
-df_train = df_train[df_train['month'] == 5]
+df_train = pd.read_csv('../weather_data/Sequence_data_frames/df_full_all_train.csv')
+df_test = pd.read_csv('../weather_data/Sequence_data_frames/df_full_all_test.csv')
+print()
+# df_train = df_train[df_train['month'] == 5]
 
 train_set = WeatherDataset(df_train)
 test_set = WeatherDataset(df_test)
 
-train_loader = torch.utils.data.DataLoader(train_set, batch_size=1, shuffle=True)
+train_loader = torch.utils.data.DataLoader(train_set, batch_size=1, shuffle=False)
 test_loader = torch.utils.data.DataLoader(test_set, batch_size=1)

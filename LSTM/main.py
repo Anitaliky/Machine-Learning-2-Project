@@ -3,12 +3,13 @@ import torch.nn as nn
 from torch import optim
 
 from Arch import Net
-from Preprocces import train_loader, test_loader
+from Preprocces import train_loader, test_loader, REL_FEATURES
 from sklearn.metrics import accuracy_score
 
 
 class Main:
-    def __init__(self):
+    def __init__(self, model_name):
+        self.model_name = model_name
         self.batch_size = 10
         self.model = Net()
 
@@ -19,75 +20,81 @@ class Main:
         loss_function = nn.MSELoss()
         # loss_function = nn.CrossEntropyLoss()
         with torch.no_grad():
+            last_group = {'year': None, 'month': None}
             for batch_idx, (x, y) in enumerate(train_loader):
                 if y.shape[1] == 1:
+                    print('continued')
                     continue
 
-                p = self.model(x)
+                p = self.model(x).round()
+                y = y.view(p.shape)
 
-                p = torch.argmax(p, dim=1).type(torch.float32)
-                y = torch.squeeze(y.type(torch.float32))
+                curr_group = {name: x[0][-1][REL_FEATURES.index(name)] for name in ['year', 'month']}
+                if not (batch_idx == 0 or
+                        ('full' not in self.model_name and 'winter' not in self.model_name and
+                         last_group['year'] != curr_group['year']) or
+                        ('winter' in self.model_name and curr_group['month'] != '1')):
+                    y = y[2:]
+                    p = p[2:]
 
                 loss_sum += loss_function(p, y) / self.batch_size
 
                 trues += y
                 preds += p
-        print('loss =', loss_sum)
-        print(trues[:5])
-        print(preds[:5])
+                last_group = curr_group
+        print('test loss =', loss_sum)
+        # print(trues[:5])
+        # print(preds[:5])
         print('accu =', accuracy_score(trues, preds))
 
     def train(self):
         # loss_function = nn.NLLLoss()
         # loss_function = nn.CrossEntropyLoss()
         loss_function = nn.MSELoss()
-        optimizer = optim.Adam(self.model.parameters())
+        optimizer = optim.Adam(self.model.parameters(), lr=0.1)
         self.model.zero_grad()
 
-        for epoch in range(80):
+        for epoch in range(800):
             los_sum = 0
+            last_group = {'year': None, 'month': None}
             for batch_idx, (x, y) in enumerate(train_loader):
                 if y.shape[1] == 1:
+                    print('continued')
                     continue
 
                 self.model.zero_grad()
-                if batch_idx == 0:
-                    print(x.shape)
-                    print(x[:, :3, :])
                 p = self.model(x)
+                y = y.view(p.shape)
                 # p.requires_grad = True
                 # p = torch.tensor(p, requires_grad=True)
-
-                # MSE
-                p = torch.argmax(p, dim=1).type(torch.float32).requires_grad_(True)
-                y = torch.squeeze(y.type(torch.float32))
-
-                # Cross-Entropy / NLLLoss
-                # y = y.view(y.shape[1])
-
+                curr_group = {name: x[0][-1][REL_FEATURES.index(name)] for name in ['year', 'month']}
+                if not (batch_idx == 0 or \
+                        ('full' not in self.model_name and 'winter' not in self.model_name and
+                         last_group['year'] != curr_group['year']) or \
+                        ('winter' in self.model_name and curr_group['month'] != '1')):
+                    y = y[2:]
+                    p = p[2:]
                 loss = loss_function(p, y) / self.batch_size  # calculate the loss
-                # break
-                # print(self.model.hidden2temp.weight)
-                loss.backward()
-                optimizer.step()
-                # print(self.model.hidden2temp.weight)
+
+                if (batch_idx+1) % self.batch_size == 0:
+                    loss.backward()
+                    optimizer.step()
 
                 los_sum += loss.item()
-
-                # if batch_idx % 600 == 0:
-                # print('data')
-                # print(x[:5])
-                # print(self.model.hidden2temp.weight.grad)
-                # print(loss.data)
-                # if batch_idx % self.batch_size == 0 and batch_idx != 0:  # make a step
-                #     optimizer.step()
-                #     self.model.zero_grad()
+                last_group = curr_group
 
             if epoch % 1 == 0:
-                print(epoch, 'train loss', los_sum)
+                print('\n', epoch, 'train loss', los_sum)
 
                 self.evaluate()
 
 
 if __name__ == '__main__':
-    Main().train()
+    Main('full_all').train()
+    # for freq_range in [[str(i) for i in range(1, 13)],  # month
+    #                    ['autumn', 'winter', 'spring', 'monsoon', 'summer'],  # season
+    #                    ['full']]:  # full year
+    #     for freq_part in freq_range:
+    #         for day_part in ['all', 'night', 'morning', 'noon', 'evening']:
+    #             print('\n')
+    #             print('_'.join([freq_part, day_part]))

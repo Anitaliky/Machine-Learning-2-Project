@@ -15,8 +15,8 @@ class Memm:
 
     def __init__(self, model_name):
         self.model_name = model_name
-        self.train_path = '/home/student/Desktop/ML/weather_data/df_{}_train.csv'.format(self.model_name)
-        self.test_path = '/home/student/Desktop/ML/weather_data/df_{}_test.csv'.format(self.model_name)
+        self.train_path = '/home/student/Desktop/ML/weather_data/Sequence_data_frames/df_{}_train.csv'.format(self.model_name)
+        self.test_path = '/home/student/Desktop/ML/weather_data/Sequence_data_frames/df_{}_test.csv'.format(self.model_name)
         self.model_dir = '/home/student/Desktop/ML/MEMM/saves/{}'.format(self.model_name)
 
         if not os.path.exists(self.model_dir):
@@ -343,33 +343,23 @@ class Memm:
                 df_seq = self.add_stars(df_seq)
             df_seq = df_seq.values.tolist()
 
-            all_t_tags += df_seq[self.col_map['Temp']][self.markov:]
+            all_t_tags += [row_j[self.col_map['Temp']] for row_j in df_seq[self.markov:]]
             all_p_tags += self.viterbi_beam(df_seq)[self.markov:]
             self.evaluate(all_t_tags, all_p_tags, on)
 
             last_group = curr_group
 
-        # grouped = df.groupby(['year', 'week'])
-        # print('test len', len(grouped))
-        # for group_id, (group, df_seq) in enumerate(grouped):
-        #     print(group_id, group, len(df_seq), end=', ')
-        #
-        #     all_t_tags += df_seq['Temp'].tolist()
-        #     all_p_tags += self.viterbi_beam(df_seq)[self.markov:]
-        #     # print(all_p_tags[-1])
-        #     # print(all_t_tags[-1])
-        #     self.evaluate(all_t_tags, all_p_tags, on)
+        self.evaluate(all_t_tags, all_p_tags, on, do_print=True)
 
-        self.evaluate(all_t_tags, all_p_tags, on, print=True)
-
-    def evaluate(self, all_t_tags, all_p_tags, on, print=False):
+    def evaluate(self, all_t_tags, all_p_tags, on, do_print=False):
         """calculates the accuracy and confusion matrix for prediction"""
         # all_p_tags = [int(item) for sublist in all_p_tags for item in sublist]
         # all_t_tags = [int(item) for sublist in all_t_tags for item in sublist]
 
         results = 'MSE: ' + str(mean_squared_error(all_t_tags, all_p_tags))
         results += ' accuracy: ' + str(accuracy_score(all_t_tags, all_p_tags))
-        # print(results)
+        if do_print:
+            print(results)
         with open(os.path.join(self.model_dir, f"results_{on}.txt"), 'a') as file:
             file.write(results)
             file.write('\n')
@@ -447,7 +437,7 @@ if __name__ == '__main__':
     #     print("invalid input. please enter 'y' or 'n'")
 
     run_train = True
-    run_train = False
+    # run_train = False
 
     for freq_range in [[str(i) for i in range(1, 13)],  # month
                        ['autumn', 'winter', 'spring', 'monsoon', 'summer'],  # season
