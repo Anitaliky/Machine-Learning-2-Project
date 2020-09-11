@@ -55,7 +55,7 @@ class Memm:
         self.markov = 2
         self.threshold = {f_name: 0 for f_name in
                           self.features_codes}  # feature count threshold - empirical count must be higher than this
-        self.la = 0.1
+        self.la = 1
         self.B = 7
         self.hyper_str = str(self.threshold) + '_' + str(self.la)
 
