@@ -13,11 +13,12 @@ pd.set_option('display.max_columns', None)
 
 class Memm:
 
-    def __init__(self, model_name):
+    def __init__(self, model_name, n_years=None):
         self.model_name = model_name
-        self.train_path = '/home/student/Desktop/ML/weather_data/Sequence_data_frames/df_{}_train.csv'.format(self.model_name)
+        self.train_path = '/home/student/Desktop/ML/weather_data/CP_filtered/df_{}_train.csv'.format(str(n_years)+'_'+self.model_name)
         self.test_path = '/home/student/Desktop/ML/weather_data/Sequence_data_frames/df_{}_test.csv'.format(self.model_name)
-        self.model_dir = '/home/student/Desktop/ML/MEMM/saves/{}'.format(self.model_name)
+        self.hmm_path = '/home/student/Desktop/ML/output_from_HMM/sequenced/HMM_df_{}_test.csv'.format(self.model_name)
+        self.model_dir = '/home/student/Desktop/ML/MEMM/saves/{}/{}'.format(str(n_years), self.model_name)
 
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
@@ -30,6 +31,7 @@ class Memm:
         self.cate = [' _conds', ' _fog', ' _hail', ' _rain', ' _snow', ' _thunder', ' _tornado', 'night', 'morning',
                      'noon', 'evening', 'year', 'month', 'week', 'day', 'hour', ' _dewptm_bars', ' _hum_bars',
                      ' _pressurem_bars', ' _vism_bars', ' _wspdm_bars']
+        self.cate.remove('hour')  # for advanced
         self.cate_map = [(name, str(i).rjust(2, '0')) for i, name in enumerate(self.cate)]
 
         self.cont = []  # [' _dewptm', ' _pressurem', ' _vism', ' _wspdm',
@@ -323,6 +325,8 @@ class Memm:
             df = pd.read_csv(self.test_path)
         elif on == 'train':
             df = pd.read_csv(self.train_path)
+        elif on == 'hmm':
+            df = pd.read_csv(self.hmm_path)
         else:
             raise Exception('invalid test name')
         self.col_map = {name: i for i, name in enumerate(df.columns)}
@@ -439,15 +443,22 @@ if __name__ == '__main__':
     run_train = True
     # run_train = False
 
-    for freq_range in [[str(i) for i in range(1, 13)],  # month
-                       ['autumn', 'winter', 'spring', 'monsoon', 'summer'],  # season
-                       ['full']]:  # full year
-        for freq_part in freq_range:
-            for day_part in ['all', 'night', 'morning', 'noon', 'evening']:
-                print('\n')
-                print('_'.join([freq_part, day_part]))
-                model = Memm(model_name='_'.join([freq_part, day_part]))
-                if run_train:
-                    model.train()
-                model.test(on='test')
-                model.test(on='train')
+    for n_years in [2, 4, 6, 8]:
+
+        for freq_range in [[str(i) for i in range(1, 13)],  # month
+                           ['autumn', 'winter', 'spring', 'monsoon', 'summer'],  # season
+                           ['full']]:  # full year
+            for freq_part in freq_range:
+                for day_part in ['all', 'night', 'morning', 'noon', 'evening']:
+                    if freq_part == 'full' or freq_part in [str(i) for i in range(1, 13)] or day_part == 'all':
+                        continue
+                    print('\n')
+                    print('_'.join([str(n_years), freq_part, day_part]))
+                    model = Memm(model_name='_'.join([freq_part, day_part]), n_years=n_years)
+                    if run_train:
+                        model.train()
+                    model.test(on='test')
+                    # model.test(on='hmm')
+                    model.test(on='train')
+
+# advanced had lmbda = 1
